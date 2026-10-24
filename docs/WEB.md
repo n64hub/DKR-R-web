@@ -9,15 +9,19 @@ unchanged.
 
 ## What the page leaves out
 
-- **DKR-R's launcher and overlay.** Both draw through ImGui on an SDL renderer or RT64's inspector, neither of which
-  a page has. The page has a launcher of its own (`runtime-recomp/src/game/web_page.cpp`): Load ROM, which opens the
-  browser's file picker, and Start Game once a ROM is kept. The ROM stays in the browser (IndexedDB, through
-  N64Recomp-browser's `persistent_home.js`). The game runs on the settings it has, but always in DKR-R's Modern profile
-  (`runtime_ui.cpp`), the one that interpolates, since a page has no overlay to pick one: Accurate, the desktop's
-  default, holds RT64 at Original and 30. It plays Modern widescreen, Modern's own default: a first run's settings
-  would give it the runtime's starting 4:3, which nothing on a page can change. Modern's Match display is RT64's Display on a page (`rt64_renderer.cpp`),
-  since SDL's Emscripten port reports no refresh rate, so RT64 interpolates the game's 30 frames a second to the
-  display's rate. Original water, no generated mipmaps.
+- **DKR-R's launcher.** It draws through ImGui on an SDL renderer, which a page hasn't got. The page has a launcher
+  of its own (`runtime-recomp/src/game/web_page.cpp`): Load ROM, which opens the browser's file picker, and Start
+  Game once a ROM is kept. The ROM stays in the browser (IndexedDB, through N64Recomp-browser's `persistent_home.js`).
+  The overlay is there, as on the desktop: Escape, F1 or a controller's Back (the MENU of the on-screen controller
+  on a phone) opens it, drawn through RT64's inspector, which on a page draws ImGui through plume (rt64-web), with
+  the font atlas its one texture, so CRT filters are off (`runtime_crt_overlay.cpp`). Its sidebar leaves out DKR-R
+  ONLINE, RESTART and EXIT (`runtime_ui.cpp`): online play is left out (below), and the browser reloads or closes a
+  page. A first run starts in DKR-R's Modern profile (`runtime_ui.cpp`), the one that interpolates, where Accurate,
+  the desktop's first profile, holds RT64 at Original and 30, and widescreen, Modern's own default: a first run's
+  settings would give it the runtime's starting 4:3. What the player picks in the overlay's Graphics page is kept.
+  Modern's Match display is RT64's Display on a page (`rt64_renderer.cpp`), since SDL's Emscripten port reports no
+  refresh rate, so RT64 interpolates the game's 30 frames a second to the display's rate. Original water, no
+  generated mipmaps.
 - **Online play, mods and custom tracks.** Online play needs WebRTC's transport (`DKR_NETPLAY_WEBRTC` off), and mods
   are imported by a worker process, which a page can't start (`legacy_mod_process.cpp`). N64ModernRuntime's live
   recompiler (sljit) emits machine code, so the runtime's mods are off on every page too.

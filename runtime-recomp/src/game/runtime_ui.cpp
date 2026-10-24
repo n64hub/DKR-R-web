@@ -698,7 +698,13 @@ constexpr int kPageAbout = 7;
 constexpr int kPageTextures = 8;
 constexpr int kMenuPageCount = 9;
 // Stable page IDs, explicit visual order for both pointer and controller use.
+#if defined(__EMSCRIPTEN__)
+// A page has no online play (docs/WEB.md), and the browser reloads or closes it, so its sidebar leaves out DKR-R
+// ONLINE, RESTART and EXIT.
+constexpr std::array<int,kMenuPageCount-1> kSidebarOrder{0,6,1,2,3,4,8,7};
+#else
 constexpr std::array<int,kMenuPageCount+2> kSidebarOrder{0,5,6,1,2,3,4,8,7,9,10};
+#endif
 int StepSidebarSelection(int current,int direction) {
     const auto found=std::find(kSidebarOrder.begin(),kSidebarOrder.end(),current);
     const int index=found==kSidebarOrder.end()?0:static_cast<int>(found-kSidebarOrder.begin());
@@ -2602,6 +2608,7 @@ void LoadSettings() {
     const auto resolved_profile =
         dkr::runtime::enhancements::resolve_settings_profile(
             settings_version, settings_complete, profile);
+    bool saved_profile = true;
     if (settings_version <
             dkr::runtime::enhancements::kOldestCompatibleSettingsVersion ||
         settings_version > dkr::runtime::enhancements::kCurrentSettingsVersion ||
@@ -2618,6 +2625,7 @@ void LoadSettings() {
         }
         RememberModernGraphics(config);
         profile = resolved_profile;
+        saved_profile = false;
         migrated = true;
         if (settings_version >= 4 && !settings_complete) {
             std::fprintf(stderr,
@@ -2633,12 +2641,15 @@ void LoadSettings() {
     }
     profile = resolved_profile;
 #if defined(__EMSCRIPTEN__)
-    // A page always plays Modern, the profile that interpolates: every N64Recomp-browser page presents at the
-    // display's rate (its README, The recomp's own code), and a page has no launcher or overlay to pick one.
-    // It plays it widescreen, Modern's own default (g_modern_aspect): a first run's settings take Modern's aspect
-    // from the runtime's starting 4:3 (RememberModernGraphics above), and a page has no Graphics page to change it.
-    profile = dkr::runtime::enhancements::PresentationProfile::Modern;
-    g_modern_aspect = AspectRatio::Expand;
+    // A page starts in Modern, the profile that interpolates: every N64Recomp-browser page presents at the display's
+    // rate (its README, The recomp's own code), where Accurate, the desktop's first profile, holds RT64 at 30. It
+    // starts widescreen, Modern's own default (g_modern_aspect): a first run's settings take Modern's aspect from the
+    // runtime's starting 4:3 (RememberModernGraphics above). Settings the player saved, from the overlay's Graphics
+    // page, are kept.
+    if (!saved_profile) {
+        profile = dkr::runtime::enhancements::PresentationProfile::Modern;
+        g_modern_aspect = AspectRatio::Expand;
+    }
 #endif
     dkr::runtime::enhancements::set_presentation_profile(profile);
     ApplyProfileGraphics(config, profile);
@@ -9510,11 +9521,6 @@ void dkr::runtime::ui::draw(RT64::Application& application) {
         dkr::runtime::enhancements::effective_texture_lod_bias());
     RT64::setGeneratedMipSampling(
         dkr::runtime::enhancements::modern_presentation_enabled());
-#if defined(__EMSCRIPTEN__)
-    // The overlay draws through RT64's ImGui inspector, which has no WebGPU
-    // backend, so a page shows none: the game runs on the settings it has.
-    return;
-#endif
     if (application.presentQueue == nullptr || application.framebufferGraphicsWorker == nullptr) {
         return;
     }
@@ -9668,8 +9674,10 @@ void dkr::runtime::ui::draw(RT64::Application& application) {
         ++g_race_button_sidebar;
         SidebarButton("PLAY", 0, sidebar_selection, nav_inner_width,
                       sidebar_layout.button_height);
+#if !defined(__EMSCRIPTEN__)
         SidebarButton("DKR-R ONLINE", kPageOnlineMp, sidebar_selection, nav_inner_width,
                       sidebar_layout.button_height);
+#endif
         SidebarButton("MODS / HACKS", kPageModsHacks, sidebar_selection, nav_inner_width,
                       sidebar_layout.button_height);
         SidebarButton("GRAPHICS", kPageGraphics, sidebar_selection, nav_inner_width,
@@ -9684,6 +9692,7 @@ void dkr::runtime::ui::draw(RT64::Application& application) {
                       sidebar_layout.button_height);
         SidebarButton("ABOUT DKR-R", kPageAbout, sidebar_selection, nav_inner_width,
                       sidebar_layout.button_height);
+#if !defined(__EMSCRIPTEN__)
         SidebarActionGap(nav_inner_width, sidebar_layout.action_section_gap);
         ImGui::PushStyleColor(
             ImGuiCol_Button,
@@ -9712,6 +9721,7 @@ void dkr::runtime::ui::draw(RT64::Application& application) {
             request_quit_popup = true;
         }
         ImGui::PopStyleColor();
+#endif
         --g_race_button_sidebar;
         ImGui::PopItemFlag();
         ImGui::EndGroup();
@@ -9947,11 +9957,6 @@ bool dkr::runtime::ui::input_capture_active() {
 }
 
 void dkr::runtime::ui::toggle_overlay() {
-#if defined(__EMSCRIPTEN__)
-    // A page has no overlay (draw), and an open one would hold the game's
-    // input with nothing on screen.
-    return;
-#endif
 #if defined(__ANDROID__) || defined(DKR_IOS)
     dkr::runtime::mobile::clear();
 #endif

@@ -49,6 +49,14 @@ std::string PathKey(const std::filesystem::path& path) {
 std::unique_ptr<GpuImage> UploadImage(RT64::Application& application,
                                       const std::filesystem::path& path,
                                       std::string& status) {
+#if defined(__EMSCRIPTEN__)
+    // A page's inspector draws ImGui through plume, and the only texture it
+    // has is its font atlas (RT64's rt64_inspector.cpp).
+    (void)application;
+    (void)path;
+    status = "CRT filters are unavailable on the web.";
+    return nullptr;
+#endif
     const std::string native_path = path.string();
     int width = 0;
     int height = 0;
