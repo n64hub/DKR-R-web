@@ -14,7 +14,7 @@ index b72d0d9..c0878f4 100644
  build_pixel_shader(  rt64 "src/shaders/TextureResolvePS.hlsl" "src/shaders/TextureResolveSamples4XPS.hlsl" "-D SAMPLES_4X")
  build_pixel_shader(  rt64 "src/shaders/TextureResolvePS.hlsl" "src/shaders/TextureResolveSamples8XPS.hlsl" "-D SAMPLES_8X")
 diff --git a/src/hle/rt64_game_frame.cpp b/src/hle/rt64_game_frame.cpp
-index 4181a2c..c3d3a00 100644
+index 4181a2c..53d9469 100644
 --- a/src/hle/rt64_game_frame.cpp
 +++ b/src/hle/rt64_game_frame.cpp
 @@ -2,6 +2,8 @@
@@ -95,7 +95,7 @@ index 4181a2c..c3d3a00 100644
          curCallHashMap.clear();
          prevCallHashMap.clear();
  
-@@ -509,10 +562,17 @@ namespace RT64 {
+@@ -509,78 +562,165 @@ namespace RT64 {
              buildCallHashMap(p, prevWorkload, prevProj, prevCallHashMap);
          }
  
@@ -116,52 +116,259 @@ index 4181a2c..c3d3a00 100644
          transformCheckSet.clear();
          tileCheckSet.clear();
          lookAtCheckSet.clear();
-@@ -527,7 +587,7 @@ namespace RT64 {
-             if (!curIt.second.doTransformMatching && !curIt.second.doTileInterpolation && !curIt.second.doLookAtInterpolation) {
-                 continue;
+ 
+-        // Traverse the map and fill the set with all the combinations of transforms to check.
+-        for (std::pair<uint64_t, GameCallMap> curIt : curCallHashMap) {
+-            // Explicit interpolation groups can disable every call-level
+-            // component while still retaining projection and linear matrix
+-            // interpolation. Avoid expanding the equal-hash range in that
+-            // case: repeated materials can otherwise turn this no-op into a
+-            // large quadratic search.
+-            if (!curIt.second.doTransformMatching && !curIt.second.doTileInterpolation && !curIt.second.doLookAtInterpolation) {
+-                continue;
++        // Fill the sets with every combination of transforms, tiles and look ats the calls of a hash could match with the
++        // previous frame's calls of the same hash, a hash's calls at a time. A pair of calls adds the pairs of their
++        // matrices (from their workloads, at the same place in each call's range), of their tiles and of their look
++        // ats, so it adds only what each call's own are: calls with the same range of matrices add the same transform
++        // pairs, and those with no tiles to interpolate or no texture generation add none of those. A group of many
++        // alike calls cost its square: Banjo-Tooie's levels drew up to 398 calls of one hash, a frame of 1,000 calls
++        // made 167,000 pairs of calls for 200-1,800 pairs of transforms, and the matching took 18-23 ms of each game
++        // frame on a phone, 13 ms of it making the pairs. So each side's distinct ranges are paired, and only the calls
++        // that can add a tile or look at pair are, each call's lookups made once. The sets are sorted and their repeats
++        // dropped after, so they hold what pairing every two calls put in them.
++        struct CallMatrices {
++            uint32_t workloadIndex;
++            uint32_t minWorldMatrix;
++            uint32_t maxWorldMatrix;
++
++            bool operator<(const CallMatrices &o) const {
++                if (workloadIndex != o.workloadIndex) {
++                    return workloadIndex < o.workloadIndex;
++                }
++
++                return (minWorldMatrix != o.minWorldMatrix) ? (minWorldMatrix < o.minWorldMatrix) : (maxWorldMatrix < o.maxWorldMatrix);
              }
 -            auto prevRange = prevCallHashMap.equal_range(curIt.first);
-+            auto prevRange = std::equal_range(prevCallHashMap.begin(), prevCallHashMap.end(), std::pair<uint64_t, GameCallMap>{ curIt.first, {} }, byHash);
-             for (auto prevIt = prevRange.first; prevIt != prevRange.second; prevIt++) {
-                 const GameIndices::Projection &curProjIndices = curScene.projections[curIt.second.sceneProjIndex];
-                 const Workload &curWorkload = workloadQueue.workloads[curProjIndices.workloadIndex];
-@@ -550,7 +610,7 @@ namespace RT64 {
-                         const uint32_t prevGroupIndex = prevWorkload.drawData.worldTransformGroups[prevWorldMatrix];
-                         const TransformGroup &prevGroup = prevWorkload.drawData.transformGroups[prevGroupIndex];
-                         if ((curGroup.matrixId == prevGroup.matrixId) && ((curGroup.matrixId == G_EX_ID_AUTO) || ((curGroup.matrixId != G_EX_ID_IGNORE) && (curGroup.ordering == G_EX_ORDER_AUTO)))) {
+-            for (auto prevIt = prevRange.first; prevIt != prevRange.second; prevIt++) {
+-                const GameIndices::Projection &curProjIndices = curScene.projections[curIt.second.sceneProjIndex];
+-                const Workload &curWorkload = workloadQueue.workloads[curProjIndices.workloadIndex];
+-                const FramebufferPair &curFbPair = curWorkload.fbPairs[curProjIndices.fbPairIndex];
+-                const Projection &curProj = curFbPair.projections[curProjIndices.projectionIndex];
+-                const GameCall &curCall = curProj.gameCalls[curIt.second.callIndex];
+-                const GameIndices::Projection &prevProjIndices = prevScene.projections[prevIt->second.sceneProjIndex];
+-                const Workload &prevWorkload = workloadQueue.workloads[prevProjIndices.workloadIndex];
+-                const FramebufferPair &prevFbPair = prevWorkload.fbPairs[prevProjIndices.fbPairIndex];
+-                const Projection &prevProj = prevFbPair.projections[prevProjIndices.projectionIndex];
+-                const GameCall &prevCall = prevProj.gameCalls[prevIt->second.callIndex];
+-                const uint32_t curWorldMatrixCount = (curCall.callDesc.maxWorldMatrix - curCall.callDesc.minWorldMatrix) + 1;
+-                const uint32_t prevWorldMatrixCount = (prevCall.callDesc.maxWorldMatrix - prevCall.callDesc.minWorldMatrix) + 1;
+-                if ((curWorldMatrixCount == prevWorldMatrixCount) && curIt.second.doTransformMatching && prevIt->second.doTransformMatching) {
+-                    for (uint32_t w = 0; w < curWorldMatrixCount; w++) {
+-                        const uint32_t curWorldMatrix = curCall.callDesc.minWorldMatrix + w;
+-                        const uint32_t curGroupIndex = curWorkload.drawData.worldTransformGroups[curWorldMatrix];
+-                        const TransformGroup &curGroup = curWorkload.drawData.transformGroups[curGroupIndex];
+-                        const uint32_t prevWorldMatrix = prevCall.callDesc.minWorldMatrix + w;
+-                        const uint32_t prevGroupIndex = prevWorkload.drawData.worldTransformGroups[prevWorldMatrix];
+-                        const TransformGroup &prevGroup = prevWorkload.drawData.transformGroups[prevGroupIndex];
+-                        if ((curGroup.matrixId == prevGroup.matrixId) && ((curGroup.matrixId == G_EX_ID_AUTO) || ((curGroup.matrixId != G_EX_ID_IGNORE) && (curGroup.ordering == G_EX_ORDER_AUTO)))) {
 -                            transformCheckSet.emplace(curWorldMatrix, prevWorldMatrix);
-+                            transformCheckSet.emplace_back(curWorldMatrix, prevWorldMatrix);
++
++            bool operator==(const CallMatrices &o) const {
++                return (workloadIndex == o.workloadIndex) && (minWorldMatrix == o.minWorldMatrix) && (maxWorldMatrix == o.maxWorldMatrix);
++            }
++        };
++
++        struct CallTiles {
++            const Workload *workload;
++            uint32_t tileIndex;
++            uint32_t tileCount;
++            bool doTileMatching;
++        };
++
++        using CallHashIterator = std::vector<std::pair<uint64_t, GameCallMap>>::const_iterator;
++        thread_local std::vector<CallMatrices> curMatrices;
++        thread_local std::vector<CallMatrices> prevMatrices;
++        thread_local std::vector<CallTiles> curTiles;
++        thread_local std::vector<CallTiles> prevTiles;
++        thread_local std::vector<uint32_t> curLookAts;
++        thread_local std::vector<uint32_t> prevLookAts;
++        auto collectCalls = [&](const GameScene &scene, CallHashIterator begin, CallHashIterator end, std::vector<CallMatrices> &matrices,
++            std::vector<CallTiles> &tiles, std::vector<uint32_t> &lookAts)
++        {
++            matrices.clear();
++            tiles.clear();
++            lookAts.clear();
++            for (CallHashIterator it = begin; it != end; it++) {
++                const GameCallMap &callMap = it->second;
++                const GameIndices::Projection &projIndices = scene.projections[callMap.sceneProjIndex];
++                const Workload &workload = workloadQueue.workloads[projIndices.workloadIndex];
++                const FramebufferPair &fbPair = workload.fbPairs[projIndices.fbPairIndex];
++                const Projection &proj = fbPair.projections[projIndices.projectionIndex];
++                const GameCall &call = proj.gameCalls[callMap.callIndex];
++                if (callMap.doTransformMatching) {
++                    matrices.push_back({ projIndices.workloadIndex, call.callDesc.minWorldMatrix, call.callDesc.maxWorldMatrix });
++                }
++
++                if (callMap.doTileInterpolation && (call.callDesc.tileCount > 0)) {
++                    tiles.push_back({ &workload, call.callDesc.tileIndex, call.callDesc.tileCount, bool(callMap.doTileMatching) });
++                }
++
++                // FIXME: We assume the same look at is used throughout the entire draw call, so we only check the first vertex.
++                // Only a call whose groups interpolate look ats adds one, so an explicit interpolation group can turn
++                // them off (DKR-R's patches/rt64/0007).
++                const uint32_t textureGenMask = G_LIGHTING | G_TEXTURE_GEN;
++                if (callMap.doLookAtInterpolation && ((call.callDesc.geometryMode & textureGenMask) == textureGenMask)) {
++                    const uint32_t vertexIndex = workload.drawData.faceIndices[call.meshDesc.faceIndicesStart];
++                    lookAts.push_back(workload.drawData.lookAtIndices[vertexIndex] >> RSP_LOOKAT_INDEX_SHIFT);
++                }
++            }
++
++            std::sort(matrices.begin(), matrices.end());
++            matrices.erase(std::unique(matrices.begin(), matrices.end()), matrices.end());
++            std::sort(lookAts.begin(), lookAts.end());
++            lookAts.erase(std::unique(lookAts.begin(), lookAts.end()), lookAts.end());
++        };
++
++        for (CallHashIterator curBegin = curCallHashMap.cbegin(); curBegin != curCallHashMap.cend();) {
++            CallHashIterator curEnd = curBegin;
++            while ((curEnd != curCallHashMap.cend()) && (curEnd->first == curBegin->first)) {
++                curEnd++;
++            }
++
++            auto prevRange = std::equal_range(prevCallHashMap.cbegin(), prevCallHashMap.cend(), *curBegin, byHash);
++            if (prevRange.first != prevRange.second) {
++                collectCalls(curScene, curBegin, curEnd, curMatrices, curTiles, curLookAts);
++                collectCalls(prevScene, prevRange.first, prevRange.second, prevMatrices, prevTiles, prevLookAts);
++                for (const CallMatrices &cur : curMatrices) {
++                    const Workload &curWorkload = workloadQueue.workloads[cur.workloadIndex];
++                    for (const CallMatrices &prev : prevMatrices) {
++                        if ((cur.maxWorldMatrix - cur.minWorldMatrix) != (prev.maxWorldMatrix - prev.minWorldMatrix)) {
++                            continue;
++                        }
++
++                        const Workload &prevWorkload = workloadQueue.workloads[prev.workloadIndex];
++                        const uint32_t worldMatrixCount = (cur.maxWorldMatrix - cur.minWorldMatrix) + 1;
++                        for (uint32_t w = 0; w < worldMatrixCount; w++) {
++                            const uint32_t curWorldMatrix = cur.minWorldMatrix + w;
++                            const uint32_t curGroupIndex = curWorkload.drawData.worldTransformGroups[curWorldMatrix];
++                            const TransformGroup &curGroup = curWorkload.drawData.transformGroups[curGroupIndex];
++                            const uint32_t prevWorldMatrix = prev.minWorldMatrix + w;
++                            const uint32_t prevGroupIndex = prevWorkload.drawData.worldTransformGroups[prevWorldMatrix];
++                            const TransformGroup &prevGroup = prevWorkload.drawData.transformGroups[prevGroupIndex];
++                            if ((curGroup.matrixId == prevGroup.matrixId) && ((curGroup.matrixId == G_EX_ID_AUTO) || ((curGroup.matrixId != G_EX_ID_IGNORE) && (curGroup.ordering == G_EX_ORDER_AUTO)))) {
++                                transformCheckSet.emplace_back(curWorldMatrix, prevWorldMatrix);
++                            }
                          }
                      }
                  }
-@@ -564,7 +624,7 @@ namespace RT64 {
+ 
+-                if ((curCall.callDesc.tileCount == prevCall.callDesc.tileCount) && (curIt.second.doTileInterpolation && prevIt->second.doTileInterpolation)) {
+-                    for (uint32_t t = 0; t < curCall.callDesc.tileCount; t++) {
+-                        const DrawCallTile &curCallTile = curWorkload.drawData.callTiles[curCall.callDesc.tileIndex + t];
+-                        const DrawCallTile &prevCallTile = prevWorkload.drawData.callTiles[prevCall.callDesc.tileIndex + t];
+-                        bool doTileMatching = curIt.second.doTileMatching && prevIt->second.doTileMatching;
+-                        if (doTileMatching && (curCallTile.tmemHashOrID != prevCallTile.tmemHashOrID)) {
++                for (const CallTiles &cur : curTiles) {
++                    for (const CallTiles &prev : prevTiles) {
++                        if (cur.tileCount != prev.tileCount) {
                              continue;
                          }
  
 -                        tileCheckSet.emplace(curCall.callDesc.tileIndex + t, prevCall.callDesc.tileIndex + t);
-+                        tileCheckSet.emplace_back(curCall.callDesc.tileIndex + t, prevCall.callDesc.tileIndex + t);
++                        const bool doTileMatching = cur.doTileMatching && prev.doTileMatching;
++                        for (uint32_t t = 0; t < cur.tileCount; t++) {
++                            const DrawCallTile &curCallTile = cur.workload->drawData.callTiles[cur.tileIndex + t];
++                            const DrawCallTile &prevCallTile = prev.workload->drawData.callTiles[prev.tileIndex + t];
++                            if (doTileMatching && (curCallTile.tmemHashOrID != prevCallTile.tmemHashOrID)) {
++                                continue;
++                            }
++
++                            tileCheckSet.emplace_back(cur.tileIndex + t, prev.tileIndex + t);
++                        }
                      }
                  }
  
-@@ -578,11 +638,16 @@ namespace RT64 {
-                     const uint32_t prevVertexIndex = prevWorkload.drawData.faceIndices[prevCall.meshDesc.faceIndicesStart];
-                     const uint32_t curLookAtIndex = curWorkload.drawData.lookAtIndices[curVertexIndex] >> RSP_LOOKAT_INDEX_SHIFT;
-                     const uint32_t prevLookAtIndex = prevWorkload.drawData.lookAtIndices[prevVertexIndex] >> RSP_LOOKAT_INDEX_SHIFT;
+-                const uint32_t textureGenMask = G_LIGHTING | G_TEXTURE_GEN;
+-                const bool curUsesTextureGen = (curCall.callDesc.geometryMode & textureGenMask) == textureGenMask;
+-                const bool prevUsesTextureGen = (prevCall.callDesc.geometryMode & textureGenMask) == textureGenMask;
+-                if (curUsesTextureGen && prevUsesTextureGen &&
+-                    curIt.second.doLookAtInterpolation && prevIt->second.doLookAtInterpolation) {
+-                    // FIXME: We assume the same look at is used throughout the entire draw call, so we only check the first vertex.
+-                    const uint32_t curVertexIndex = curWorkload.drawData.faceIndices[curCall.meshDesc.faceIndicesStart];
+-                    const uint32_t prevVertexIndex = prevWorkload.drawData.faceIndices[prevCall.meshDesc.faceIndicesStart];
+-                    const uint32_t curLookAtIndex = curWorkload.drawData.lookAtIndices[curVertexIndex] >> RSP_LOOKAT_INDEX_SHIFT;
+-                    const uint32_t prevLookAtIndex = prevWorkload.drawData.lookAtIndices[prevVertexIndex] >> RSP_LOOKAT_INDEX_SHIFT;
 -                    lookAtCheckSet.emplace(curLookAtIndex, prevLookAtIndex);
-+                    lookAtCheckSet.emplace_back(curLookAtIndex, prevLookAtIndex);
++                for (uint32_t curLookAt : curLookAts) {
++                    for (uint32_t prevLookAt : prevLookAts) {
++                        lookAtCheckSet.emplace_back(curLookAt, prevLookAt);
++                    }
                  }
              }
-         }
- 
++
++            curBegin = curEnd;
++        }
++
 +        // Sorted and without repeats, as the sets were.
 +        for (std::vector<IndexPair> *checkSet : { &transformCheckSet, &tileCheckSet, &lookAtCheckSet }) {
 +            sortUniqueIndexPairs(*checkSet);
-+        }
-+
+         }
+ 
          // Compute all the differences between transforms and insert them into a vector that will be sorted according to the differences.
-         thread_local std::vector<MatchCandidate> matchCandidates;
-         matchCandidates.clear();
-@@ -793,7 +858,7 @@ namespace RT64 {
+@@ -678,14 +818,48 @@ namespace RT64 {
+             const bool wrappedUlt = (curTile.cmt == G_TX_WRAP) && (modulo(integerUlt, curTile.maskt * 4) == modulo(expectedUlt, curTile.maskt * 4));
+             const bool wrappedLrs = (curTile.cms == G_TX_WRAP) && (modulo(integerLrs, curTile.masks * 4) == modulo(expectedLrs, curTile.masks * 4));
+             const bool wrappedLrt = (curTile.cmt == G_TX_WRAP) && (modulo(integerLrt, curTile.maskt * 4) == modulo(expectedLrt, curTile.maskt * 4));
+-            curTileMap.prevUls = curTile.uls - curTileMap.deltaUls;
+-            curTileMap.prevUlt = curTile.ult - curTileMap.deltaUlt;
+-            curTileMap.prevLrs = curTile.lrs - curTileMap.deltaLrs;
+-            curTileMap.prevLrt = curTile.lrt - curTileMap.deltaLrt;
++            const float beforeUls = curTileMap.deltaUls;
++            const float beforeUlt = curTileMap.deltaUlt;
++            const float beforeLrs = curTileMap.deltaLrs;
++            const float beforeLrt = curTileMap.deltaLrt;
+             curTileMap.deltaUls = wrappedUls || (abs(deltaUls) >= curTile.masks * 2) ? curTileMap.deltaUls : deltaUls;
+             curTileMap.deltaUlt = wrappedUlt || (abs(deltaUlt) >= curTile.maskt * 2) ? curTileMap.deltaUlt : deltaUlt;
+             curTileMap.deltaLrs = wrappedLrs || (abs(deltaLrs) >= curTile.masks * 2) ? curTileMap.deltaLrs : deltaLrs;
+             curTileMap.deltaLrt = wrappedLrt || (abs(deltaLrt) >= curTile.maskt * 2) ? curTileMap.deltaLrt : deltaLrt;
++
++            // A scroll is placed between frames only while it is steady, each direction by itself, from this frame's
++            // own start. Drawn from where the last frame's scroll said the tile was, a texture that jumps once (a
++            // picture stepping to its next cell) slid there a frame late, a slow scroll that moves every other frame
++            // slid back on the frames it rested, and one that changed speed started each frame in the wrong place.
++            // A direction that scrolls the same way as the last frame did, 0.4 to 2.5 times as far, is placed; the
++            // last frame's amount stands in for this one's only across a wrap, where this one's can't be read. Any
++            // other is drawn where the game put it. S and T are judged apart, so a drift in one doesn't stop the
++            // other's flow.
++            auto steady = [](float now, float before) {
++                if ((before == 0.0f) || (now == 0.0f) || ((now < 0.0f) != (before < 0.0f))) {
++                    return false;
++                }
++
++                const float ratio = now / before;
++                return (ratio >= 0.4f) && (ratio <= 2.5f);
++            };
++
++            // A tile's two edges move together in every case seen: an edge that stands while the other flows is
++            // allowed, one that does anything else is not.
++            auto placed = [&](float nowA, float beforeA, float nowB, float beforeB) {
++                const bool a = steady(nowA, beforeA);
++                const bool b = steady(nowB, beforeB);
++                const bool aStill = (nowA == 0.0f) && (beforeA == 0.0f);
++                const bool bStill = (nowB == 0.0f) && (beforeB == 0.0f);
++                return (a || b) && (a || aStill) && (b || bStill);
++            };
++
++            const bool placeS = placed(curTileMap.deltaUls, beforeUls, curTileMap.deltaLrs, beforeLrs);
++            const bool placeT = placed(curTileMap.deltaUlt, beforeUlt, curTileMap.deltaLrt, beforeLrt);
++            curTileMap.prevUls = placeS ? (curTile.uls - curTileMap.deltaUls) : curTile.uls;
++            curTileMap.prevLrs = placeS ? (curTile.lrs - curTileMap.deltaLrs) : curTile.lrs;
++            curTileMap.prevUlt = placeT ? (curTile.ult - curTileMap.deltaUlt) : curTile.ult;
++            curTileMap.prevLrt = placeT ? (curTile.lrt - curTileMap.deltaLrt) : curTile.lrt;
+             curTileMap.mapped = true;
+             firstCurWorkloadMap.prevTilesMapped[indices.second] = true;
+             tileInterpolationUsed = tileInterpolationUsed || tileScrolled;
+@@ -793,7 +967,7 @@ namespace RT64 {
          }
      }
      
@@ -170,7 +377,7 @@ index 4181a2c..c3d3a00 100644
          for (uint32_t c = 0; c < proj.gameCallCount; c++) {
              const GameCall &call = proj.gameCalls[c];
              uint32_t matrixIdHash = 0;
-@@ -813,7 +878,7 @@ namespace RT64 {
+@@ -813,7 +987,7 @@ namespace RT64 {
                  doLookAtInterpolation = doLookAtInterpolation || (group.lookAtInterpolation != G_EX_COMPONENT_SKIP);
              }
  
@@ -180,10 +387,10 @@ index 4181a2c..c3d3a00 100644
      }
  
 diff --git a/src/hle/rt64_workload_queue.cpp b/src/hle/rt64_workload_queue.cpp
-index 4e191c2..b98b1b2 100644
+index 4e191c2..db149f1 100644
 --- a/src/hle/rt64_workload_queue.cpp
 +++ b/src/hle/rt64_workload_queue.cpp
-@@ -111,7 +111,11 @@ namespace RT64 {
+@@ -111,12 +111,19 @@ namespace RT64 {
  
          threadsRunning = true;
          renderThread = new std::thread(&WorkloadQueue::renderThreadLoop, this);
@@ -195,7 +402,15 @@ index 4e191c2..b98b1b2 100644
      }
  
      void WorkloadQueue::updateMultisampling() {
-@@ -238,6 +242,11 @@ namespace RT64 {
+         renderFramebufferManager->destroyAll();
+         dummyDepthTarget.reset();
++#   if RT64_WGSL
++        dummyDepthTargets.dummies.clear();
++#   endif
+         framebufferRenderer->updateMultisampling();
+     }
+ 
+@@ -238,6 +245,11 @@ namespace RT64 {
  
          workloadConfig.skipBuffering = ext.sharedResources->enhancementConfig.presentation.mode ==
              EnhancementConfiguration::Presentation::Mode::SkipBuffering;
@@ -207,7 +422,45 @@ index 4e191c2..b98b1b2 100644
  
  #   if RT_ENABLED
          workloadConfig.raytracingEnabled = rtEnabled;
-@@ -584,6 +593,10 @@ namespace RT64 {
+@@ -428,6 +440,17 @@ namespace RT64 {
+                     nativeColorWidth = colorImg.width;
+                     nativeColorHeight = fbPair.drawColorRect.bottom(true);
+ 
++                    // The height becomes the target's, and RasterVS's clip space is built from it, so its bottom clips.
++                    // drawColorRect is fitted to where this game frame put the triangles, but an interpolated frame puts
++                    // them between the last game frame's place and this one's, and can put them lower: with the camera
++                    // pitching down, a band at the bottom was cut off while the framebuffer's height hadn't yet reached
++                    // it. The height is at least what the viewports the triangles were drawn through cover inside their
++                    // scissors, which the game sets and interpolation doesn't move. Not the scissor alone: it starts at
++                    // 8192 lines, and a game can draw to a small framebuffer under a screen-sized one.
++                    if (!fbPair.viewportRect.isNull()) {
++                        nativeColorHeight = std::max(nativeColorHeight, uint32_t(std::max(0, fbPair.viewportRect.bottom(true))));
++                    }
++
+                     // When the target is much bigger than the reference height, we reduce the resolution scaling (but clamped to 1.0).
+                     const uint32_t heightThreshold = (workload.viFbSize[1] > 0) ? ((workload.viFbSize[1] * 3) / 2) : 360;
+                     uint32_t downsampleMultiplier = workloadConfig.downsampleMultiplier;
+@@ -546,8 +569,10 @@ namespace RT64 {
+                         colorFb->readHeight = 0;
+                     }
+ 
+-                    // Set up the dummy target used for rendering the depth if no depth framebuffer is active.
++                    // Set up the dummy target used for rendering the depth if no depth framebuffer is active. WebGPU's
++                    // is one of its color target's size, got as it draws (DummyDepthTargets).
+                     if (depthFb == nullptr) {
++#                   if !RT64_WGSL
+                         if (dummyDepthTarget == nullptr) {
+                             dummyDepthTarget = std::make_unique<RenderTarget>(0, Framebuffer::Type::Depth, targetManager.multisampling, targetManager.usesHDR);
+                             dummyDepthTarget->setupDepth(ext.workloadGraphicsWorker, rtWidth, rtHeight);
+@@ -560,6 +585,7 @@ namespace RT64 {
+                         if (colorTarget != nullptr) {
+                             colorDepthPairs.emplace_back(colorTarget, dummyDepthTarget.get());
+                         }
++#                   endif
+                     }
+                     else if (depthTarget != nullptr) {
+                         if (colorTarget != nullptr) {
+@@ -584,6 +610,10 @@ namespace RT64 {
                  }
              }
  
@@ -218,7 +471,31 @@ index 4e191c2..b98b1b2 100644
              for (RenderTarget *renderTarget : resizedTargets) {
                  renderFramebufferManager->destroyAllWithRenderTarget(renderTarget);
              }
-@@ -638,7 +651,8 @@ namespace RT64 {
+@@ -602,6 +632,9 @@ namespace RT64 {
+             for (uint32_t f = 0; f < fbPairCount; f++) {
+                 const FramebufferPair &fbPair = workload.fbPairs[f];
+                 fbManager.performDiscards(fbPair.startFbDiscards);
++#           if RT64_FREE_DISCARDED_TARGETS
++                targetManager.discard(fbPair.startFbDiscards, workload.submissionFrame);
++#           endif
+             }
+             
+             // Add all framebuffer pairs to the framebuffer renderer and setup the operations.
+@@ -618,7 +651,12 @@ namespace RT64 {
+             for (uint32_t f = 0; f < fbPairCount; f++) {
+                 const FramebufferPair &fbPair = workload.fbPairs[f];
+                 if (getTargetsFromPair(f)) {
+-                    RenderFramebufferStorage &fbStorage = renderFramebufferManager->get(fbKey, colorTarget, (depthTarget != nullptr) ? depthTarget : dummyDepthTarget.get());
++#               if RT64_WGSL
++                    RenderTarget *pairDepthTarget = (depthTarget != nullptr) ? depthTarget : dummyDepthTargets.get(ext.workloadGraphicsWorker, colorTarget, workload.submissionFrame);
++#               else
++                    RenderTarget *pairDepthTarget = (depthTarget != nullptr) ? depthTarget : dummyDepthTarget.get();
++#               endif
++                    RenderFramebufferStorage &fbStorage = renderFramebufferManager->get(fbKey, colorTarget, pairDepthTarget);
+                     FramebufferRenderer::DrawParams drawParams;
+                     drawParams.worker = ext.workloadGraphicsWorker;
+                     drawParams.fbStorage = &fbStorage;
+@@ -638,7 +676,8 @@ namespace RT64 {
                      drawParams.rtEnabled = workloadConfig.raytracingEnabled;
                      drawParams.submissionFrame = workload.submissionFrame;
                      drawParams.deltaTimeMs = deltaTimeMs;
@@ -228,7 +505,7 @@ index 4e191c2..b98b1b2 100644
                      drawParams.postBlendNoise = workloadConfig.postBlendNoise;
                      drawParams.postBlendNoiseNegative = workloadConfig.postBlendNoiseNegative;
                      drawParams.maxGameCall = std::min(gameCallCountMax - gameCallCursor, fbPair.gameCallCount);
-@@ -704,7 +718,7 @@ namespace RT64 {
+@@ -704,7 +743,7 @@ namespace RT64 {
              ext.workloadGraphicsWorker->commandList->begin();
              ext.workloadGraphicsWorker->commandList->resetQueryPool(queryPool.get(), 0, 2);
              ext.workloadGraphicsWorker->commandList->writeTimestamp(queryPool.get(), 0);
@@ -237,7 +514,50 @@ index 4e191c2..b98b1b2 100644
              framebufferRenderer->recordSetup(ext.workloadGraphicsWorker, bufferUploaders, processRSP ? rspProcessor.get() : nullptr, processWorldVertices ? vertexProcessor.get() : nullptr, &workload.outputBuffers, workloadConfig.raytracingEnabled);
              
              // Record all framebuffer pairs.
-@@ -891,6 +905,9 @@ namespace RT64 {
+@@ -845,15 +884,30 @@ namespace RT64 {
+             framebufferRenderer->waitForUploaders();
+             ext.workloadGraphicsWorker->execute();
+             ext.workloadGraphicsWorker->wait();
++
++#       if RT64_WGSL
++            dummyDepthTargets.freeUnused(workload.submissionFrame, renderFramebufferManager.get());
++#       endif
++
+             workerMutex.unlock();
+ 
+             // Update the GPU profiler with the results from the timestamps of the frame.
++#       if !defined(__EMSCRIPTEN__)
++            // Not on WebGPU, which has no timestamps (plume's queries there do nothing and read zeros), and where behind
++            // plume's device thread each of the two calls waits for a round trip to the page's thread after every workload.
+             queryPool->queryResults();
+             const uint64_t *frameTimestamps = queryPool->getResults();
+             rendererGPUProfiler.log(double(frameTimestamps[1] - frameTimestamps[0]) / 1000000.0);
++#       endif
+ 
+             // Indicate to the texture cache it's safe to delete the textures if no locks are active.
+             ext.textureCache->decrementLock();
++
++#       if RT64_FREE_DISCARDED_TARGETS
++            // Free the discarded targets no workload asked for again in as many workloads as the texture cache keeps
++            // a texture nothing used, long after any workload or present that could still hold one.
++            targetManager.freeDiscarded(workload.submissionFrame, WORKLOAD_QUEUE_SIZE * 32, renderFramebufferManager.get());
++#       endif
+         }
+ 
+         if ((overrideTarget != nullptr) && !usingMSAA) {
+@@ -881,6 +935,11 @@ namespace RT64 {
+         workloadIdCondition.notify_all();
+     }
+ 
++    bool WorkloadQueue::isWorkloadDone(uint64_t id) {
++        const std::scoped_lock lock(workloadIdMutex);
++        return (id <= workloadId);
++    }
++
+     void WorkloadQueue::renderThreadLoop() {
+         Thread::setCurrentThreadName("RT64 Workload");
+ 
+@@ -891,6 +950,9 @@ namespace RT64 {
          uint32_t displayRateForTicks = 0;
          int processCursor = -1;
          bool frameReduction = false;
@@ -247,7 +567,7 @@ index 4e191c2..b98b1b2 100644
          while (threadsRunning) {
              {
                  std::unique_lock<std::mutex> cursorLock(cursorMutex);
-@@ -905,6 +922,12 @@ namespace RT64 {
+@@ -905,6 +967,12 @@ namespace RT64 {
              }
  
              if (processCursor >= 0) {
@@ -260,7 +580,7 @@ index 4e191c2..b98b1b2 100644
                  std::unique_lock<std::mutex> threadLock(threadMutex);
                  Workload &workload = workloads[processCursor];
                  ext.presentQueue->waitForPresentId(workload.presentId);
-@@ -917,22 +940,36 @@ namespace RT64 {
+@@ -917,22 +985,36 @@ namespace RT64 {
                  workloadProfiler.start();
                  threadConfigurationUpdate(workload.viFbSize, workloadConfig);
  
@@ -301,7 +621,7 @@ index 4e191c2..b98b1b2 100644
                      std::scoped_lock<std::mutex> managerLock(ext.sharedResources->managerMutex);
                      FramebufferManager &fbManager = ext.sharedResources->framebufferManager;
                      std::vector<uint32_t> &colorVector = ext.sharedResources->colorImageAddressVector;
-@@ -988,7 +1025,7 @@ namespace RT64 {
+@@ -988,7 +1070,7 @@ namespace RT64 {
                  float prevFrameWeight = 0.0f;
                  float curFrameWeight = 1.0f;
                  float deltaTimeMs = 1.0f / 30.0f;
@@ -310,7 +630,7 @@ index 4e191c2..b98b1b2 100644
                  bool generateInterpolatedFrames = false;
                  bool velocityUploaderUsed = false;
                  bool tileInterpolationUsed = false;
-@@ -1037,7 +1074,7 @@ namespace RT64 {
+@@ -1037,7 +1119,7 @@ namespace RT64 {
                  
                  // Get the current and previous set of frame counters. The other set can be in use by the present queue. Skip if no new present event has arrived before this workload event.
                  InterpolatedFrameCounters &prevFrameCounters = ext.sharedResources->interpolatedFrames[ext.sharedResources->interpolatedFramesIndex];
@@ -319,7 +639,7 @@ index 4e191c2..b98b1b2 100644
                  if (useDifferentCounters) {
                      ext.sharedResources->interpolatedFramesIndex = ext.sharedResources->interpolatedFramesIndex ^ 1;
                      lastPresentId = workload.presentId;
-@@ -1052,16 +1089,26 @@ namespace RT64 {
+@@ -1052,17 +1134,30 @@ namespace RT64 {
                  }
  
                  InterpolatedFrameCounters &curFrameCounters = ext.sharedResources->interpolatedFrames[ext.sharedResources->interpolatedFramesIndex];
@@ -348,9 +668,13 @@ index 4e191c2..b98b1b2 100644
 +                requiredFrames = std::min(requiredFrames, InterpolatedTargetSlots);
 +#           endif
                  if ((requiredFrames > 0) && (interpolatedTargets.size() < requiredFrames)) {
++                    // The present thread indexes this vector under the lock while it shows the previous game frame's
++                    // targets, and growing it can move every element.
++                    std::scoped_lock<std::mutex> interpolatedLock(ext.sharedResources->interpolatedMutex);
                      uint32_t previousSize = uint32_t(interpolatedTargets.size());
                      interpolatedTargets.resize(requiredFrames);
-@@ -1078,6 +1125,15 @@ namespace RT64 {
+                     for (uint32_t i = previousSize; i < requiredFrames; i++) {
+@@ -1078,6 +1173,15 @@ namespace RT64 {
                  bool skipWorkloadNow = false;
                  uint32_t targetIndex = 0;
                  uint32_t framesRendered = 0;
@@ -366,7 +690,7 @@ index 4e191c2..b98b1b2 100644
                  int64_t renderTimeTotalMicro = 0;
                  for (uint32_t frame = 0; (frame < displayFrames) && !skipWorkloadNow; frame++) {
                      // Evaluate if this frame should be skipped. Measure the current time and compare it to what frame is estimated should be have been rendered by now.
-@@ -1101,15 +1157,43 @@ namespace RT64 {
+@@ -1101,15 +1205,43 @@ namespace RT64 {
  
                          // Override the render target.
                          if (usingMSAA || (frame > 0)) {
@@ -415,7 +739,7 @@ index 4e191c2..b98b1b2 100644
                                  });
                              }
  
-@@ -1145,10 +1229,7 @@ namespace RT64 {
+@@ -1145,10 +1277,7 @@ namespace RT64 {
  
                      // For every additional frame, we increase the frames available and notify the present queue.
                      if (generateInterpolatedFrames && (usingMSAA || (frame > 0))) {
@@ -427,11 +751,36 @@ index 4e191c2..b98b1b2 100644
  
                          {
                              std::scoped_lock<std::mutex> managerLock(ext.sharedResources->interpolatedMutex);
-@@ -1179,7 +1260,16 @@ namespace RT64 {
+@@ -1179,7 +1308,41 @@ namespace RT64 {
  
                  threadConfigurationValidate();
  
 -                if (!workload.paused) {
++#           if defined(__EMSCRIPTEN__)
++                // present-stats: every 5 s or so, how many game frames a second came and how many frames were drawn for them.
++                // A game slower than the rate it reports (viOriginalRate) is its own frames falling behind, on the CPU, where
++                // presents short of the display's rate can be either: Rush 2049's race on a phone reported 30 and came at
++                // 19-25, while RT64 drew 46 frames a second for them. The clock is read every 16th frame: on a phone each
++                // read is a trip out of wasm that costs.
++                if (ext.presentQueue->presentStats && !offscreenPass) {
++                    if ((statsGameFrames == 0) && (statsFramesDrawn == 0)) {
++                        statsStart = Timer::current();
++                    }
++
++                    statsGameFrames++;
++                    statsFramesDrawn += framesRendered;
++                    if ((statsGameFrames % 16) == 0) {
++                        const double seconds = Timer::deltaMicroseconds(statsStart, Timer::current()) / 1000000.0;
++                        if (seconds >= 5.0) {
++                            printf("RT64: %.1f game frames a second (the game reports %u), %.1f frames drawn for them\n", statsGameFrames / seconds,
++                                workload.viOriginalRate, statsFramesDrawn / seconds);
++                            statsGameFrames = 0;
++                            statsFramesDrawn = 0;
++                        }
++                    }
++                }
++#           endif
++
 +                // The barrier stays on the frame before an offscreen pass, and catches up once the next frame is drawn.
 +                if (offscreenPass) {
 +                    barrierHeld = true;

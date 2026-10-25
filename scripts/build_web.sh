@@ -80,7 +80,7 @@ step "Patches"
 #   are saved) has nothing to patch.
 #   That patch is staged at configure time over this file (runtime-recomp/cmake/PerformancePatches.cmake), so it has to
 #   find DKR-R's lines here.
-web_merged_from=494cc8110de23edbc394d977224d7a498fee04b7 # v0.82.0
+web_merged_from=4c49375fb7a614dbcd8ed6fb4f510377db02b6fd # its PR 325
 rt64_shared="src/hle/rt64_game_frame.cpp src/hle/rt64_workload_queue.cpp src/render/rt64_shader_library.cpp
 src/shaders/RasterPS.hlsl src/shaders/TextureSampler.hlsli src/shared/rt64_raster_params.h"
 web_patches="rt64 extern/rt64 $(echo $rt64_shared)
