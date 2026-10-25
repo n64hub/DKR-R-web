@@ -10,10 +10,7 @@ index cbab060..4726453 100644
  
  #include <cassert>
  #include <cinttypes>
-@@ -915,6 +916,7 @@ namespace RT64 {
-     }
- 
-     void State::fullSync() {
+@@ -918,3 +919,4 @@ namespace RT64 {
 +        dkr::runtime::performance_trace::Scope measure(dkr::runtime::performance_trace::Region::FullSync);
          landRAMCopies(false);
          flush();
