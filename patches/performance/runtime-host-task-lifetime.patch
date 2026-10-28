@@ -21,8 +21,7 @@ diff --git a/ultramodern/src/events.cpp b/ultramodern/src/events.cpp
 +    OSTask* task = nullptr;
 +    host_tasks::Token token{};
  };
-@@ -152,3 +160,3 @@
-     moodycamel::BlockingConcurrentQueue<Action> action_queue{};
+@@ -153,2 +161,2 @@
 -    moodycamel::BlockingConcurrentQueue<OSTask*> sp_task_queue{};
 +    moodycamel::BlockingConcurrentQueue<QueuedRspTask> sp_task_queue{};
      moodycamel::ConcurrentQueue<OSThread*> deleted_threads{};
