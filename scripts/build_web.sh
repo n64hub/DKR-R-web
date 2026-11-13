@@ -77,15 +77,17 @@ step "Patches"
 #   the idle thread doesn't spin on it, and DKR-R does the same its own way (patches/performance/
 #   runtime-deferred-events.patch, the DeferredEventQueue's blocked list, moved back when a receive frees its queue).
 #   events.cpp's sp_complete is DKR-R's, which waits for the RSP's done to reach the game's queue, with the web's check
-#   for a done already sent (ULTRAMODERN_YIELDS_END_QUEUED_GRAPHICS) in front of it. sp.cpp takes the web's change but for
-#   rsp::yield_asked in osSpTaskYield, which would send the RSP's done from the game's own thread, where DKR-R's send
-#   waits for the game's threads to take it in; and DKR-R gives each graphics task its own copy of RDRAM, so a list the
+#   for a done already sent (ULTRAMODERN_YIELDS_END_QUEUED_GRAPHICS) in front of it; its graphics thread's actions are
+#   DKR-R's, which have no DummyWorkloadAction (DKR-R's RendererContext has no send_dummy_workload), with the web's
+#   PrepareForGameAction (renderer::prepare_for_game(), which recomp.cpp calls before the game's entrypoint). sp.cpp
+#   takes the web's change but for rsp::yield_asked in osSpTaskYield, which would send the RSP's done from the game's
+#   own thread, where DKR-R's send waits for the game's threads to take it in; and DKR-R gives each graphics task its own copy of RDRAM, so a list the
 #   game reuses before the renderer reads it does no harm here. A yield is ignored here as before.
 #   librecomp/src/config.cpp isn't in DKR-R's runtime, so the web's change there (only the settings a player changed
 #   are saved) has nothing to patch.
 #   That patch is staged at configure time over this file (runtime-recomp/cmake/PerformancePatches.cmake), so it has to
 #   find DKR-R's lines here.
-web_merged_from=18bfcba598c9c125a5fbf88ac0da6cb3590351af # its PR 683
+web_merged_from=394a5748c0d91b25c5d9bc3adfee583015e3b965 # its PR 722
 rt64_shared="src/hle/rt64_game_frame.cpp src/hle/rt64_workload_queue.cpp src/render/rt64_shader_library.cpp
 src/shaders/RasterPS.hlsl src/shaders/TextureSampler.hlsli src/shared/rt64_raster_params.h"
 web_patches="rt64 extern/rt64 $(echo $rt64_shared)
