@@ -19,7 +19,9 @@
 #    and the build inputs DKR-R derives from that (scripts/prepare_payloads.py: the save-layout and in-world portrait
 #    stages, the Camera++ kernel), in build/prepared, as scripts/Prepare-DKR-Runtime-macOS.sh does for both revisions.
 #    The page has US v1.0 only: Rev A would be a second copy of the game's code in the wasm. So it has no local model
-#    detail either, which DKR-R builds only with both revisions, and no owned rollback engine (no online play).
+#    detail either, which DKR-R builds only with both revisions, and no owned rollback engine (no online play). DKR-R's
+#    generators read recomp.h as DKR-R patches it, by its hash, so step 2 keeps that aside, in build/dkr-recomp, before
+#    the web's patch to it.
 # 5. The page, with emcmake, in build-web. --prepare stops before it.
 #
 # --patches needs no ROM: steps 1 and 2 without the decomp's build (its symbol lists name the guest symbols the runtime
@@ -99,12 +101,14 @@ hlslpp extern/rt64/src/contrib/hlslpp
 N64ModernRuntime extern/n64-modern-runtime librecomp/include/librecomp/mods.hpp librecomp/src/mods.cpp librecomp/src/recomp.cpp librecomp/src/sp.cpp ultramodern/src/events.cpp - ultramodern/src/mesgqueue.cpp librecomp/src/config.cpp
 N64Recomp extern/n64-modern-runtime/N64Recomp"
 stamp="$(git -C $browser rev-parse HEAD) $( (cat patches/manifest.json $(ls patches/web/*.patch 2> /dev/null); echo "$web_merged_from $web_patches") | sha1sum | cut -c1-40)"
-if [[ "$(cat build/web-patched 2> /dev/null)" != "$stamp" ]]; then
+if [[ "$(cat build/web-patched 2> /dev/null)" != "$stamp" || ! -f build/dkr-recomp/recomp.h ]]; then
     for s in extern/rt64 extern/n64-modern-runtime; do
         git -C $s submodule foreach --recursive -q 'git reset -q --hard && git clean -fdq'
         git -C $s reset -q --hard && git -C $s clean -fdq
     done
     python3 scripts/apply_dependency_patches.py
+    # DKR-R's generators take recomp.h as DKR-R patches it, by its hash (scripts/prepare_payloads.py --header).
+    mkdir -p build/dkr-recomp && cp extern/n64-modern-runtime/N64Recomp/include/recomp.h build/dkr-recomp/
     while read -r name checkout skip; do
         merged="${skip%%- *}"
         cmake -P $browser/patches/apply.cmake "$name" "$checkout" ${skip/- /}
@@ -147,13 +151,13 @@ fi
 step "US v1.0 recompiled code"
 work=build/generated/v77
 prepared=build/prepared
-inputs="$(cat runtime-recomp/*.v77.*.json scripts/*.py "$elf" "$recompiler" |
+inputs="$(cat runtime-recomp/*.v77.*.json scripts/*.py build/dkr-recomp/recomp.h "$elf" "$recompiler" |
     sha1sum | cut -c1-40)"
 if [[ "$(cat $prepared/.dkr-payload-stamp 2> /dev/null)" != "$inputs" || ! -f $prepared/prepared.json ]]; then
     rm -rf $work
     python3 scripts/compose_payloads.py payload --revision 77 --elf "$elf" --rom "$built_rom" \
         --recompiler "$recompiler" --output $work || { tail -20 $work/n64recomp.log; exit 1; }
-    python3 -B scripts/prepare_payloads.py --output $prepared \
+    python3 -B scripts/prepare_payloads.py --output $prepared --header build/dkr-recomp/recomp.h --no-owned \
         --input 77 $work/RecompiledFuncs $work/dkr.us.v77.toml "$elf"
     echo "$inputs" > $prepared/.dkr-payload-stamp
 fi

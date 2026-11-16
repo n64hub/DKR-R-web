@@ -30,6 +30,13 @@ run; it must lie under the work tree's build/ (the kernels refuse anything
 else) and is only removed when this script made it.
 
     prepare_payloads.py [--output DIR] [--input REV FUNCS CONFIG ELF ...]
+                        [--header RECOMP_H] [--no-owned]
+
+--header reads N64Recomp's recomp.h from another place than the patched
+checkout's: a web build's checkout carries N64Recomp-browser's patch to it as
+well, so it keeps DKR-R's own (the reviewed one) aside for this
+(scripts/build_web.sh). --no-owned prepares no owned-v<rev>/: a web page has
+no online play, so no rollback engine.
 
 Exit status: 0 on success, 1 when a stage refuses its input.
 """
@@ -83,8 +90,14 @@ class PrepareError(Exception):
     pass
 
 
+# --no-owned: no owned engine at any stage (a web page's build).
+SKIP_OWNED = False
+
+
 def owned(source: Path, config: Path, output: Path, revision: int, options: Sequence[str]) -> None:
     """Run the owned-engine generator the way the release process did."""
+    if SKIP_OWNED:
+        return
     command = [
         sys.executable,
         "-B",
@@ -105,6 +118,8 @@ def owned(source: Path, config: Path, output: Path, revision: int, options: Sequ
 
 def options_from(manifest: Path, revision: int) -> list[str]:
     """The previous owned engine's options and roots, for the next stage."""
+    if SKIP_OWNED:
+        return []
     data = cast("dict[str, object]", json.loads(manifest.read_text(encoding="utf-8")))
     if data.get("revision") != revision or not data.get("runtime_symbol_isolation"):
         raise PrepareError(f"{manifest}: not an isolated v{revision} owned engine")
@@ -237,6 +252,7 @@ def publish(out: Path, revisions: Sequence[int]) -> None:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    global HEADER, SKIP_OWNED
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--output", type=Path, default=ROOT / "build/prepared", help="default: build/prepared")
     parser.add_argument(
@@ -246,7 +262,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         metavar=("REV", "FUNCS", "CONFIG", "ELF"),
         help="one revision's N64Recomp output, its config and decomp ELF (repeat per revision)",
     )
+    parser.add_argument("--header", type=Path, default=HEADER, help="N64Recomp's recomp.h, as DKR-R patches it")
+    parser.add_argument("--no-owned", action="store_true", help="prepare no owned rollback engine")
     args = parser.parse_args(argv)
+    HEADER, SKIP_OWNED = cast(Path, args.header).resolve(), cast(bool, args.no_owned)
     out = cast(Path, args.output).resolve()
     inputs: dict[int, tuple[Path, Path, Path]] = {}
     for rev, funcs, config, elf in cast("list[list[str]] | None", args.input) or []:
