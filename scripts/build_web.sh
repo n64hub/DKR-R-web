@@ -151,7 +151,10 @@ fi
 step "US v1.0 recompiled code"
 work=build/generated/v77
 prepared=build/prepared
-inputs="$(cat runtime-recomp/*.v77.*.json scripts/*.py build/dkr-recomp/recomp.h "$elf" "$recompiler" |
+# Everything the prepare steps read: the guest code they insert (runtime-recomp/guest) and the Camera++ bridge
+# its kernel is checked against at build time, as well as the payload's own inputs.
+inputs="$(cat runtime-recomp/*.v77.*.json scripts/*.py build/dkr-recomp/recomp.h runtime-recomp/guest/* \
+    runtime-recomp/src/game/camera_kernel.[ch] runtime-recomp/src/game/camera_kernel_guest.h "$elf" "$recompiler" |
     sha1sum | cut -c1-40)"
 if [[ "$(cat $prepared/.dkr-payload-stamp 2> /dev/null)" != "$inputs" || ! -f $prepared/prepared.json ]]; then
     rm -rf $work
