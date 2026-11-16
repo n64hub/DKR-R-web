@@ -243,9 +243,15 @@ void RenderPass::before_command(std::uint32_t physical) {
     const auto revision =
         active_ ? active_->revision
                 : (dkr::runtime::active_payload() ? dkr::runtime::active_payload()->revision : rom::Revision::UsV77);
+#if !defined(DKR_RUNTIME_HAS_V80) || DKR_RUNTIME_HAS_V80
     bool okay = revision == rom::Revision::UsV77
                     ? dkr_camera_v77_shadow_draw(decoder_.data(), decoder_.size(), &request, &draw_, &shadows_)
                     : dkr_camera_v80_shadow_draw(decoder_.data(), decoder_.size(), &request, &draw_, &shadows_);
+#else
+    // A build of US v1.0 alone runs no other revision (cmake/Camera.cmake).
+    bool okay = revision == rom::Revision::UsV77 &&
+                dkr_camera_v77_shadow_draw(decoder_.data(), decoder_.size(), &request, &draw_, &shadows_);
+#endif
     if (okay)
         try {
             capture_shadows(*range);
