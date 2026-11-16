@@ -1,6 +1,8 @@
 #pragma once
 #include <json/json.hpp>
+#if DKR_NETPLAY_WEBRTC
 #include <rtc/rtc.hpp>
+#endif
 #include <atomic>
 #include <chrono>
 #include <cstdint>
@@ -8,10 +10,40 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <stop_token>
 #include <string>
+#include <variant>
 #include <vector>
 #include "netplay/secure_channel.hpp"
+
+#if !DKR_NETPLAY_WEBRTC
+// Without the WebRTC transport (DKR_NETPLAY_WEBRTC=OFF: a UDP-only developer build, or a web page, which has no
+// libdatachannel) the directory has no WebSocket: this one never opens, so the directory stays disconnected and
+// retries as it does after any connection that failed.
+namespace rtc {
+using message_variant = std::variant<std::vector<std::byte>, std::string>;
+class WebSocket {
+public:
+    struct Configuration {
+        std::vector<std::string> protocols;
+        std::optional<std::string> caCertificatePemFile;
+        std::optional<std::chrono::milliseconds> connectionTimeout;
+        std::optional<std::size_t> maxMessageSize;
+    };
+    explicit WebSocket(const Configuration&) {}
+    void onMessage(std::function<void(message_variant)>) {}
+    void onClosed(std::function<void()>) {}
+    void onError(std::function<void(std::string)>) {}
+    void resetCallbacks() {}
+    void open(const std::string&) {}
+    void close() {}
+    bool isOpen() const { return false; }
+    std::size_t bufferedAmount() const { return 0; }
+    bool send(const std::string&) { return false; }
+};
+} // namespace rtc
+#endif
 
 namespace dkr::online {
 using Json = nlohmann::json;
