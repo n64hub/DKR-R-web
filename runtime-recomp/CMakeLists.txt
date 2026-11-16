@@ -1458,11 +1458,11 @@ if(DKR_RUNTIME_BUILD_GENERATED OR DKR_RUNTIME_BUILD_RT64)
     # unresolved on Linux. MSVC is order-independent, and this ordering keeps
     # both platforms on the same single-runtime link graph.
     if(DKR_RUNTIME_BUILD_GENERATED)
-        target_link_libraries(
-            DKRPortGameCore
-            PRIVATE DKRRecompiledFuncsV77 $<TARGET_NAME_IF_EXISTS:DKRRecompiledFuncsV80>
-        )
-        if(NOT TARGET DKRRecompiledFuncsV80)
+        if(TARGET DKRRecompiledFuncsV80)
+            target_link_libraries(DKRPortGameCore PRIVATE DKRRecompiledFuncsV77 DKRRecompiledFuncsV80)
+        else()
+            # A build of US v1.0 alone (a web page's, scripts/build_web.sh).
+            target_link_libraries(DKRPortGameCore PRIVATE DKRRecompiledFuncsV77)
             target_compile_definitions(DKRPortGameCore PRIVATE DKR_RUNTIME_HAS_V80=0)
         endif()
     endif()
