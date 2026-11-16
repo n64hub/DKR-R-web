@@ -2,6 +2,7 @@
 #include "storage/ui.inl"
 void DrawCrashReportingSettings(float width) {
     using namespace dkr::crash_reports;
+#if !defined(__EMSCRIPTEN__) // A page sends no crash reports (service.cpp), so has only its storage settings.
     auto state = view();
     bool enabled = state.consent.choice == 1;
     if (SettingsCheck("##automatic-crash-reports", dkr::localisation::text("support.reporting.enable").data(), &enabled,
@@ -24,6 +25,7 @@ void DrawCrashReportingSettings(float width) {
                        width, kSetMuted, 0.F);
     }
     PaddockGap(16.F);
+#endif
     DrawStorageSettings(width);
 }
 void DrawCrashReportingConsent() {

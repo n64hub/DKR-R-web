@@ -119,6 +119,13 @@ std::unique_ptr<Service> owner;
 } // namespace
 void start(const std::filesystem::path& profile, std::string version) {
     dkr::storage::start(profile);
+#if defined(__EMSCRIPTEN__)
+    // A page sends no crash reports: it has no helper process or network path to send them through, and the browser
+    // keeps no log of a crash. So it starts no service, never asks the consent question (view() answers "off"), and
+    // its Support page has no reporting switch (ui.inl).
+    (void)version;
+    return;
+#endif
     if (owner)
         return;
     try {
@@ -143,7 +150,11 @@ void shutdown() {
 }
 View view() {
     if (!owner)
+#if defined(__EMSCRIPTEN__)
+        return {{0, false, 0}, 0, false, ""};
+#else
         return {{0, false, 0}, 0, false, "support.reporting.local_error"};
+#endif
     std::lock_guard lock(owner->mutex);
     return owner->snapshot;
 }
