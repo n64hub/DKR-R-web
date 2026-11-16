@@ -1,3 +1,7 @@
+#include "capture_symbols.hpp"
+#include "display_list_symbols.hpp"
+#include "guest_call_context.hpp"
+#include "memory_symbols.hpp"
 #include "custom_tracks.hpp"
 #if defined(DKR_REPLAY_QUALIFICATION) || defined(DKR_EXPERIMENTAL_RACE_TEST)
 #include "replay_probe_capture.hpp"
@@ -61,12 +65,8 @@ struct SectionMapping {
 };
 
 constexpr SectionMapping kSectionMappings[] = {
-    {3U, 2U, Section::Textures3D},
-    {5U, 4U, Section::Textures2D},
-    {13U, 12U, Section::Sprites},
-    {20U, 21U, Section::LevelObjectMaps},
-    {22U, 23U, Section::LevelHeaders},
-    {24U, 25U, Section::LevelNames},
+    {3U, 2U, Section::Textures3D},        {5U, 4U, Section::Textures2D},     {13U, 12U, Section::Sprites},
+    {20U, 21U, Section::LevelObjectMaps}, {22U, 23U, Section::LevelHeaders}, {24U, 25U, Section::LevelNames},
     {26U, 27U, Section::LevelModels},
 };
 
@@ -162,8 +162,7 @@ std::int32_t read_word(std::uint8_t* rdram, std::uint32_t address) {
     return static_cast<std::int32_t>(MEM_W(0, rdram_address(address)));
 }
 
-void write_word(std::uint8_t* rdram, std::uint32_t address,
-                std::int32_t value) {
+void write_word(std::uint8_t* rdram, std::uint32_t address, std::int32_t value) {
     MEM_W(0, rdram_address(address)) = static_cast<std::uint32_t>(value);
 }
 
@@ -210,11 +209,9 @@ struct DisplayListGlobals {
 };
 
 DisplayListGlobals display_list_globals() {
-    if (dkr::runtime::revision_addresses::gSelectedRevision ==
-        dkr::runtime::rom::Revision::UsV80) {
-        return {0x800DD920U, 0x80123A8CU, 0x80123AA8U, 0x80121770U};
-    }
-    return {0x800DD3B0U, 0x8012350CU, 0x80123528U, 0x801211F0U};
+    const auto& symbols = dkr::runtime::display_list_symbols::for_revision(
+        dkr::runtime::revision_addresses::gSelectedRevision == dkr::runtime::rom::Revision::UsV80);
+    return {symbols.table, symbols.previous_players, symbols.current_commands, symbols.lists};
 }
 
 // A frame's budget with `players` viewports (0 is one player) for a level
@@ -223,8 +220,8 @@ std::int32_t commands_for(int players, std::int32_t batches) {
     if (batches <= 0) {
         return kRetailCommands[players];
     }
-    const std::int64_t budget = std::int64_t(kRetailCommands[players]) +
-                                std::int64_t(batches) * kCommandsPerBatch * (players + 1);
+    const std::int64_t budget =
+        std::int64_t(kRetailCommands[players]) + std::int64_t(batches) * kCommandsPerBatch * (players + 1);
     return static_cast<std::int32_t>(std::min<std::int64_t>(budget, kCommandLimit));
 }
 
@@ -250,24 +247,22 @@ bool write_display_list_budget(std::uint8_t* rdram, std::int32_t batches) {
 // Entry of asset_table_load. Only the requested section is recorded; the
 // argument register is reused later in the function, so the epilogue can no
 // longer recover it.
-extern "C" void dkr_custom_tracks_table_load_begin(std::uint8_t*,
-                                                    recomp_context* context) {
+extern "C" void dkr_custom_tracks_table_load_begin(std::uint8_t*, recomp_context* context) {
     g_requested_table = static_cast<std::uint32_t>(context->r4);
 }
 
 static void size_menu_display_lists(std::uint8_t* rdram);
-static void publish_extended_table(std::uint8_t* rdram, recomp_context* context,
-                                   std::uint32_t requested);
+static void publish_extended_table(std::uint8_t* rdram, recomp_context* context, std::uint32_t requested);
 
 // Both the retail epilogue and the mounted legacy namespace reach this: the
 // namespace can serve the table without ever running the retail loader.
 // Extend the returned table, then size the Track Select display lists the
 // appended levels need - the sizing is idempotent past boot.
-extern "C" void dkr_custom_tracks_extend_table(std::uint8_t* rdram, recomp_context* context,
-                                               std::uint32_t requested) {
+extern "C" void dkr_custom_tracks_extend_table(std::uint8_t* rdram, recomp_context* context, std::uint32_t requested) {
     // This namespace is already extended against the frozen host manifest.
     // Never append the local offline catalogue a second time.
-    if(dkr::runtime::legacy::frozen_online_resources())return;
+    if (dkr::runtime::legacy::frozen_online_resources())
+        return;
     // The normal experimental lobby temporarily binds an offline constructor
     // while parking retail pre-INTRO state. Installed offline .dkrmap tracks
     // must not enter that checkpoint or resize its retail display-list heaps.
@@ -288,8 +283,7 @@ extern "C" void dkr_custom_tracks_extend_table(std::uint8_t* rdram, recomp_conte
 
 // Publishes a longer level table so the retail count, range check and world
 // maximum all grow with it.
-static void publish_extended_table(std::uint8_t* rdram, recomp_context* context,
-                                   std::uint32_t requested) {
+static void publish_extended_table(std::uint8_t* rdram, recomp_context* context, std::uint32_t requested) {
     Section section = Section::LevelHeaders;
     if (!section_for_table(requested, section)) {
         return; // Not a section custom tracks contribute to.
@@ -304,8 +298,7 @@ static void publish_extended_table(std::uint8_t* rdram, recomp_context* context,
     retail.reserve(64);
     const auto available = std::min(kMaxTableEntries, (kRdramEnd - retail_address) / 4U);
     for (std::uint32_t index = 0; index < available; ++index) {
-        const std::int32_t entry =
-            read_word(rdram, retail_address + (index * 4U));
+        const std::int32_t entry = read_word(rdram, retail_address + (index * 4U));
         retail.push_back(entry);
         if (entry == -1) {
             break;
@@ -318,8 +311,7 @@ static void publish_extended_table(std::uint8_t* rdram, recomp_context* context,
     }
 
     const std::vector<std::int32_t> extended =
-        dkr::runtime::custom_tracks::build_extended_table(section,
-                                                          retail.data(), retail.size());
+        dkr::runtime::custom_tracks::build_extended_table(section, retail.data(), retail.size());
     if (extended.empty()) {
         return; // Nothing added; the retail table stands unchanged.
     }
@@ -329,31 +321,29 @@ static void publish_extended_table(std::uint8_t* rdram, recomp_context* context,
         return;
     }
 
-    recomp_context call = *context;
-    call.f_odd=call.mips3_float_mode?&call.f1.u32l:&call.f0.u32h;
+    dkr::runtime::GuestCallContext guest(*context);
+    recomp_context& call = guest.context;
     call.r4 = static_cast<gpr>(extended.size() * sizeof(std::int32_t));
     call.r5 = static_cast<gpr>(kColourTagGrey);
-    payload->mempool_alloc_safe(rdram, &call);
+    payload->mempool_alloc_safe(rdram, guest.get());
     const auto allocated = static_cast<std::uint32_t>(call.r2);
-    if (!addressable(allocated) || (allocated & 3U) ||
-        extended.size() > (kRdramEnd - allocated) / 4U) {
+    if (!addressable(allocated) || (allocated & 3U) || extended.size() > (kRdramEnd - allocated) / 4U) {
         return; // Out of pool: keep the retail table rather than fail the load.
     }
 
     for (std::size_t index = 0; index < extended.size(); ++index) {
-        write_word(rdram, allocated + static_cast<std::uint32_t>(index * 4U),
-                   extended[index]);
+        write_word(rdram, allocated + static_cast<std::uint32_t>(index * 4U), extended[index]);
     }
     context->r2 = static_cast<gpr>(static_cast<std::int32_t>(allocated));
-    if(payload->asset_release) {
-        call=*context;call.r4=rdram_address(retail_address);
-        payload->asset_release(rdram,&call);
+    if (payload->asset_release) {
+        guest.reset(*context);
+        call.r4 = rdram_address(retail_address);
+        payload->asset_release(rdram, guest.get());
     }
 }
 
 // Common epilogue of asset_table_load.
-extern "C" void dkr_custom_tracks_table_load_end(std::uint8_t* rdram,
-                                                  recomp_context* context) {
+extern "C" void dkr_custom_tracks_table_load_end(std::uint8_t* rdram, recomp_context* context) {
     const std::uint32_t requested = g_requested_table;
     g_requested_table = 0xFFFFFFFFU;
     dkr_custom_tracks_extend_table(rdram, context, requested);
@@ -361,8 +351,7 @@ extern "C" void dkr_custom_tracks_table_load_end(std::uint8_t* rdram,
 
 // Entry of asset_load. The destination register is clobbered by the DMA call
 // before the epilogue is reached, so every argument is captured here.
-extern "C" void dkr_custom_tracks_asset_load_begin(std::uint8_t*,
-                                                    recomp_context* context) {
+extern "C" void dkr_custom_tracks_asset_load_begin(std::uint8_t*, recomp_context* context) {
     g_load.section = static_cast<std::uint32_t>(context->r4);
     g_load.destination = static_cast<std::uint32_t>(context->r5);
     g_load.offset = static_cast<std::uint32_t>(context->r6);
@@ -370,49 +359,50 @@ extern "C" void dkr_custom_tracks_asset_load_begin(std::uint8_t*,
 }
 
 namespace {
-bool apply_custom_payload(std::uint8_t* rdram,const AssetLoadRequest& request);
+bool apply_custom_payload(std::uint8_t* rdram, const AssetLoadRequest& request);
 }
 
 // Consult only ranges assigned by build_extended_table. This must precede
 // the legacy bank's strict section-bounds check: appended Blender bytes are
 // owned by this loader, not by the immutable legacy source bank.
-extern "C" int dkr_custom_tracks_asset_override(std::uint8_t* rdram,recomp_context* context) {
-    const AssetLoadRequest request{std::uint32_t(context->r4),std::uint32_t(context->r5),
-        std::uint32_t(context->r6),std::int32_t(context->r7)};
-    if(!apply_custom_payload(rdram,request))return 0;
-    context->r2=request.size;return 1;
+extern "C" int dkr_custom_tracks_asset_override(std::uint8_t* rdram, recomp_context* context) {
+    const AssetLoadRequest request{std::uint32_t(context->r4), std::uint32_t(context->r5), std::uint32_t(context->r6),
+                                   std::int32_t(context->r7)};
+    if (!apply_custom_payload(rdram, request))
+        return 0;
+    context->r2 = request.size;
+    return 1;
 }
 
 // Reached only on asset_load's DMA path. A custom offset lies just past the
 // section, so the retail DMA has read unrelated but in-ROM bytes into the
 // destination; replacing them here keeps the retail loader untouched and needs
 // no instruction patch.
-extern "C" void dkr_custom_tracks_asset_load_end(std::uint8_t* rdram,
-                                                  recomp_context*) {
+extern "C" void dkr_custom_tracks_asset_load_end(std::uint8_t* rdram, recomp_context*) {
     const AssetLoadRequest request = g_load;
     g_load = AssetLoadRequest{};
-    apply_custom_payload(rdram,request);
+    apply_custom_payload(rdram, request);
 }
 
 namespace {
-bool apply_custom_payload(std::uint8_t* rdram,const AssetLoadRequest& request) {
-    if(dkr::runtime::legacy::frozen_online_resources())return false;
-    if (owned_vanilla_bootstrap()) return false;
+bool apply_custom_payload(std::uint8_t* rdram, const AssetLoadRequest& request) {
+    if (dkr::runtime::legacy::frozen_online_resources())
+        return false;
+    if (owned_vanilla_bootstrap())
+        return false;
     Section section = Section::LevelHeaders;
-    if (!section_for_data(request.section, section) || request.size <= 0 ||
-        !addressable(request.destination) || std::uint32_t(request.size)>kRdramHigh-request.destination+1U) {
+    if (!section_for_data(request.section, section) || request.size <= 0 || !addressable(request.destination) ||
+        std::uint32_t(request.size) > kRdramHigh - request.destination + 1U) {
         return false;
     }
 
-    const std::uint8_t* payload = dkr::runtime::custom_tracks::payload_for(
-        section, request.offset, request.size);
+    const std::uint8_t* payload = dkr::runtime::custom_tracks::payload_for(section, request.offset, request.size);
     if (payload == nullptr) {
         return false; // Retail/legacy range: leave its original owner in charge.
     }
 
     for (std::int32_t index = 0; index < request.size; ++index) {
-        MEM_B(index, rdram_address(request.destination)) =
-            static_cast<std::uint8_t>(payload[index]);
+        MEM_B(index, rdram_address(request.destination)) = static_cast<std::uint8_t>(payload[index]);
     }
 
     if (section != Section::LevelHeaders) {
@@ -428,8 +418,7 @@ bool apply_custom_payload(std::uint8_t* rdram,const AssetLoadRequest& request) {
     // fields. So the game is served the world whose background Track Select
     // already draws for that category.
     constexpr std::uint8_t kWorldDinoDomain = 1;
-    if (static_cast<std::uint8_t>(payload[0]) ==
-        dkr::runtime::custom_tracks::kCustomTrackWorld) {
+    if (static_cast<std::uint8_t>(payload[0]) == dkr::runtime::custom_tracks::kCustomTrackWorld) {
         MEM_B(0, rdram_address(request.destination)) = kWorldDinoDomain;
     }
 
@@ -442,15 +431,13 @@ bool apply_custom_payload(std::uint8_t* rdram,const AssetLoadRequest& request) {
         if (request.size <= fixup.offset + 1) {
             continue;
         }
-        const std::int32_t index = dkr::runtime::custom_tracks::sibling_index(
-            Section::LevelHeaders, request.offset, fixup.section, fixup.slot);
+        const std::int32_t index = dkr::runtime::custom_tracks::sibling_index(Section::LevelHeaders, request.offset,
+                                                                              fixup.section, fixup.slot);
         if (index < 0) {
             continue; // Track ships none, or that table is not built yet.
         }
-        MEM_B(fixup.offset, rdram_address(request.destination)) =
-            static_cast<std::uint8_t>((index >> 8) & 0xFF);
-        MEM_B(fixup.offset + 1, rdram_address(request.destination)) =
-            static_cast<std::uint8_t>(index & 0xFF);
+        MEM_B(fixup.offset, rdram_address(request.destination)) = static_cast<std::uint8_t>((index >> 8) & 0xFF);
+        MEM_B(fixup.offset + 1, rdram_address(request.destination)) = static_cast<std::uint8_t>(index & 0xFF);
         std::fprintf(stderr,
                      "[custom-tracks] header at offset %u now points at %s "
                      "%d\n",
@@ -468,22 +455,23 @@ bool apply_custom_payload(std::uint8_t* rdram,const AssetLoadRequest& request) {
         MEM_BU(at, rdram_address(request.destination)) |= tracks::kHeaderNoMinimap;
         std::fprintf(stderr,
                      "[custom-tracks] header at offset %u hides its minimap: "
-                     "relaunch to load it\n", request.offset);
+                     "relaunch to load it\n",
+                     request.offset);
     }
     return true;
 }
 } // namespace
-
 
 // Common return convergence of get_track_id_to_load. All three retail paths -
 // new game, settings->courseId, and the gTrackIdToLoad override that Track
 // Select and Trophy Race drive - reach this instruction with the chosen level
 // already in v0, so Track Lab replaces the answer without disturbing any of
 // them or introducing a second way to pick a level.
-extern "C" void dkr_custom_tracks_track_id_override(std::uint8_t*,
-                                                     recomp_context* context) {
-    if (dkr::runtime::legacy::frozen_online_resources()) return;
-    if (owned_vanilla_bootstrap()) return;
+extern "C" void dkr_custom_tracks_track_id_override(std::uint8_t*, recomp_context* context) {
+    if (dkr::runtime::legacy::frozen_online_resources())
+        return;
+    if (owned_vanilla_bootstrap())
+        return;
     const std::int32_t armed = dkr::runtime::custom_tracks::track_override();
     if (armed == dkr::runtime::custom_tracks::kNoTrackOverride) {
         return;
@@ -495,12 +483,14 @@ extern "C" void dkr_custom_tracks_track_id_override(std::uint8_t*,
 // the same value the menus produce when the player picks a track, so retail
 // runs its own start sequence - vehicle default, entrance, cutscene, game mode
 // and load_level_game - instead of this file reproducing it.
-extern "C" void dkr_custom_tracks_auto_boot(std::uint8_t* rdram,
-                                              recomp_context* context) {
-    if (dkr::runtime::legacy::frozen_online_resources()) return;
-    if (owned_vanilla_bootstrap()) return;
+extern "C" void dkr_custom_tracks_auto_boot(std::uint8_t* rdram, recomp_context* context) {
+    if (dkr::runtime::legacy::frozen_online_resources())
+        return;
+    if (owned_vanilla_bootstrap())
+        return;
 #if defined(DKR_REPLAY_QUALIFICATION) || defined(DKR_EXPERIMENTAL_RACE_TEST)
-    if (dkr_private_replay_boot(rdram, context)) return;
+    if (dkr_private_replay_boot(rdram, context))
+        return;
 #endif
     namespace tracks_ns = dkr::runtime::custom_tracks;
     if (!tracks_ns::auto_boot_enabled()) {
@@ -525,10 +515,10 @@ extern "C" void dkr_custom_tracks_auto_boot(std::uint8_t* rdram,
 
     namespace addresses = dkr::runtime::revision_addresses;
     const auto invoke = [&](dkr::runtime::RecompiledEntrypoint function, gpr argument = 0) {
-        recomp_context call = *context;
-        call.r4 = argument;
-        function(rdram, &call);
-        return call.r2;
+        dkr::runtime::GuestCallContext call(*context);
+        call->r4 = argument;
+        function(rdram, call.get());
+        return call->r2;
     };
     // Reproduce the nonvisual character/game-select setup skipped by auto boot.
     // Merely writing a player slot leaves Settings::racers zeroed (all Krunch).
@@ -537,10 +527,10 @@ extern "C" void dkr_custom_tracks_auto_boot(std::uint8_t* rdram,
     // The character-mod adapter shares charselect_assign_ai's native commit
     // boundary and expects every active player to have confirmed a character.
     for (int player = 0; player < 4; ++player) {
-        MEM_B(player, rdram_address(addresses::CharacterSelectStatus)) = player == 0 ? 2 : 0;
+        MEM_B(player, rdram_address(addresses::current().CharacterSelectStatus)) = player == 0 ? 2 : 0;
     }
-    MEM_W(0, rdram_address(addresses::NumberOfReadyPlayers)) = 1;
-    MEM_W(0, rdram_address(addresses::TracksMode)) = 1;
+    MEM_W(0, rdram_address(addresses::current().NumberOfReadyPlayers)) = 1;
+    MEM_W(0, rdram_address(addresses::current().TracksMode)) = 1;
     invoke(payload->set_time_trial_enabled, 0);
 
     // charselect_assign_ai needs the unlock-dependent table normally selected
@@ -549,21 +539,19 @@ extern "C" void dkr_custom_tracks_auto_boot(std::uint8_t* rdram,
     const bool rev_a = addresses::gSelectedRevision == dkr::runtime::rom::Revision::UsV80;
     const bool drumstick = invoke(payload->unlock_drumstick) != 0;
     const bool tt = invoke(payload->unlock_tt) != 0;
-    const std::uint32_t tables77[] = {0x800DFDD0U, 0x800DFE40U, 0x800DFEC0U, 0x800DFF40U};
-    const std::uint32_t tables80[] = {0x800E0350U, 0x800E03C0U, 0x800E0440U, 0x800E04C0U};
+    const auto& capture = dkr::runtime::capture_symbols::for_revision(rev_a);
     const unsigned table = unsigned(drumstick) | (unsigned(tt) << 1);
-    write_word(rdram, rev_a ? 0x8012696CU : 0x801263CCU,
-               static_cast<std::int32_t>((rev_a ? tables80 : tables77)[table]));
-    MEM_B(0, rdram_address(addresses::CharacterIdSlots)) = kCharacterDiddy;
+    write_word(rdram, capture.select_data, static_cast<std::int32_t>(capture.tables[table]));
+    MEM_B(0, rdram_address(addresses::current().CharacterIdSlots)) = kCharacterDiddy;
     invoke(payload->charselect_assign_ai, 1);
     invoke(payload->init_racer_headers);
     std::fprintf(stderr, "[track-lab] single-player roster:");
     for (int racer = 0; racer < 8; ++racer) {
-        std::fprintf(stderr, " %d", int(MEM_B(racer, rdram_address(addresses::CharacterIdSlots))));
+        std::fprintf(stderr, " %d", int(MEM_B(racer, rdram_address(addresses::current().CharacterIdSlots))));
     }
     std::fprintf(stderr, "\n");
     // mode_menu's direct-level result uses players minus one.
-    write_word(rdram, rev_a ? 0x80123A80U : 0x80123500U, 0);
+    write_word(rdram, capture.game_players, 0);
 
     context->r2 = static_cast<gpr>(kMenuResultStartLevel | level);
 }
@@ -579,24 +567,22 @@ extern "C" void dkr_custom_tracks_auto_boot(std::uint8_t* rdram,
 static std::uint32_t grow_main_pool(std::uint8_t* rdram) {
     constexpr std::uint32_t kRetailRamEnd = 0x80400000U;
     constexpr std::uint32_t kExpansionRamEnd = 0x80800000U;
-    constexpr std::uint32_t kSlotSize = 0x14U; // MemoryPoolSlot in memory.h
+    constexpr std::uint32_t kSlotSize = 0x14U;       // MemoryPoolSlot in memory.h
     constexpr std::int32_t kSlotIndexLimit = 0x7FFF; // slot links are s16
     // gMemoryPools, verified against ver/symbols/symbol_addrs.us.v{77,80}.txt.
     // Pool 0 is the main pool; MemoryPool is {maxNumSlots, curNumSlots, slots, size}.
     const std::uint32_t pool =
-        dkr::runtime::revision_addresses::gSelectedRevision == dkr::runtime::rom::Revision::UsV80
-            ? 0x80123B00U
-            : 0x80123580U;
+        dkr::runtime::memory_symbols::for_revision(dkr::runtime::revision_addresses::gSelectedRevision ==
+                                                   dkr::runtime::rom::Revision::UsV80)
+            .pools;
     const std::int32_t max_slots = read_word(rdram, pool);
     const std::int32_t used_slots = read_word(rdram, pool + 4U);
     const auto slots = static_cast<std::uint32_t>(read_word(rdram, pool + 8U));
-    if (!addressable(slots) || max_slots <= 0 || max_slots > kSlotIndexLimit ||
-        used_slots <= 0 || used_slots >= max_slots) {
+    if (!addressable(slots) || max_slots <= 0 || max_slots > kSlotIndexLimit || used_slots <= 0 ||
+        used_slots >= max_slots) {
         return 0;
     }
-    const auto slot = [&](std::int32_t index) {
-        return slots + static_cast<std::uint32_t>(index) * kSlotSize;
-    };
+    const auto slot = [&](std::int32_t index) { return slots + static_cast<std::uint32_t>(index) * kSlotSize; };
     // The slot list is kept in address order, so its tail ends the pool.
     std::int32_t tail = 0;
     for (std::int32_t steps = 0;; ++steps) {
@@ -668,8 +654,7 @@ static void prepare_track_heap(std::int32_t level) {
     if (arena <= custom_tracks::kRetailTrackHeap) {
         return; // Fits retail, or the payload could not be measured.
     }
-    const std::int64_t wanted =
-        (std::int64_t(arena) + kTrackHeapSlack + 15) & ~std::int64_t(15);
+    const std::int64_t wanted = (std::int64_t(arena) + kTrackHeapSlack + 15) & ~std::int64_t(15);
     if (wanted > kTrackHeapCeiling) {
         // Saying so is the whole point: past here the track corrupts memory the
         // same way it did before, and nothing else in the log would name it.
@@ -677,8 +662,7 @@ static void prepare_track_heap(std::int32_t level) {
                      "[custom-tracks] level %d needs %d bytes of level model and "
                      "collision data, over the %d this runtime can reserve; it "
                      "will overflow. Reduce collidable triangles or geometry\n",
-                     static_cast<int>(level), static_cast<int>(arena),
-                     static_cast<int>(kTrackHeapCeiling));
+                     static_cast<int>(level), static_cast<int>(arena), static_cast<int>(kTrackHeapCeiling));
         g_track_heap_bytes = kTrackHeapCeiling;
         return;
     }
@@ -690,8 +674,7 @@ static void prepare_track_heap(std::int32_t level) {
     std::fprintf(stderr,
                  "[custom-tracks] level %d builds %d bytes of level model and "
                  "collision data, over the retail %d\n",
-                 static_cast<int>(level), static_cast<int>(arena),
-                 static_cast<int>(custom_tracks::kRetailTrackHeap));
+                 static_cast<int>(level), static_cast<int>(arena), static_cast<int>(custom_tracks::kRetailTrackHeap));
 }
 
 static void grow_main_pool_for_level(std::uint8_t* rdram, std::int32_t level) {
@@ -700,8 +683,7 @@ static void grow_main_pool_for_level(std::uint8_t* rdram, std::int32_t level) {
     }
     const std::uint32_t extra = grow_main_pool(rdram);
     if (extra != 0) {
-        std::fprintf(stderr,
-                     "[custom-tracks] main memory pool grown into expansion RAM for level %d (+%u KB)\n",
+        std::fprintf(stderr, "[custom-tracks] main memory pool grown into expansion RAM for level %d (+%u KB)\n",
                      static_cast<int>(level), extra / 1024U);
     }
 }
@@ -761,13 +743,14 @@ void dkr::runtime::custom_tracks::set_level_load_observer(LevelLoadObserver obse
 // allocates anything. Every load passes here - races, Track Lab and restarts,
 // and also the Track Select previews that load_level_game's hook never sees -
 // so this is where a .dkrmap level gets its pool and its model heap.
-extern "C" void dkr_custom_tracks_prepare_memory(std::uint8_t* rdram,
-                                                 recomp_context* context) {
-    if(dkr::runtime::legacy::frozen_course_hook("prepare_memory",rdram,context))return;
+extern "C" void dkr_custom_tracks_prepare_memory(std::uint8_t* rdram, recomp_context* context) {
+    if (dkr::runtime::legacy::frozen_course_hook("prepare_memory", rdram, context))
+        return;
     if (owned_vanilla_bootstrap()) {
         // A previous offline Track Lab song must not survive a vanilla online
         // boot. The observer's no-level branch clears only native bindings.
-        if (g_level_load_observer != nullptr) g_level_load_observer(-1);
+        if (g_level_load_observer != nullptr)
+            g_level_load_observer(-1);
         return;
     }
     const auto level = static_cast<std::int32_t>(context->r4);
@@ -807,27 +790,24 @@ extern "C" void dkr_custom_tracks_prepare_memory(std::uint8_t* rdram,
 // rmonPrintf. Anything other than the retail constant in s5 means this is not
 // the instruction this code believes it is - a revision whose prologue differs
 // keeps the retail heap instead of having a register it misread overwritten.
-extern "C" void dkr_custom_tracks_track_heap(std::uint8_t* rdram,
-                                             recomp_context* context) {
-    if(dkr::runtime::legacy::frozen_course_hook("track_heap",rdram,context))return;
-    if (owned_vanilla_bootstrap()) return;
+extern "C" void dkr_custom_tracks_track_heap(std::uint8_t* rdram, recomp_context* context) {
+    if (dkr::runtime::legacy::frozen_course_hook("track_heap", rdram, context))
+        return;
+    if (owned_vanilla_bootstrap())
+        return;
     const std::int32_t wanted = g_track_heap_bytes;
     g_track_heap_bytes = 0;
     if (wanted <= dkr::runtime::custom_tracks::kRetailTrackHeap) {
         return;
     }
-    if (static_cast<std::int32_t>(context->r21) !=
-        dkr::runtime::custom_tracks::kRetailTrackHeap) {
-        std::fprintf(stderr,
-                     "[custom-tracks] generate_track does not hold the retail "
-                     "track heap size where it was expected; leaving it alone\n");
+    if (static_cast<std::int32_t>(context->r21) != dkr::runtime::custom_tracks::kRetailTrackHeap) {
+        std::fprintf(stderr, "[custom-tracks] generate_track does not hold the retail "
+                             "track heap size where it was expected; leaving it alone\n");
         return;
     }
     context->r21 = static_cast<gpr>(wanted);
-    std::fprintf(stderr,
-                 "[custom-tracks] track heap raised from %d to %d bytes\n",
-                 static_cast<int>(dkr::runtime::custom_tracks::kRetailTrackHeap),
-                 static_cast<int>(wanted));
+    std::fprintf(stderr, "[custom-tracks] track heap raised from %d to %d bytes\n",
+                 static_cast<int>(dkr::runtime::custom_tracks::kRetailTrackHeap), static_cast<int>(wanted));
 }
 
 // Called at load_level_game's entry, before alloc_displaylist_heap. DKR sizes
@@ -842,10 +822,11 @@ extern "C" void dkr_custom_tracks_track_heap(std::uint8_t* rdram,
 // .dkrmap courses. A changed table invalidates gPrevPlayerCount, and that
 // makes the retail allocator rebuild the heap in this same call. The model
 // heap is left to level_load's hook, which this load reaches next.
-extern "C" void dkr_custom_tracks_prepare_level(std::uint8_t* rdram,
-                                                recomp_context* context) {
-    if(dkr::runtime::legacy::frozen_course_hook("prepare_level",rdram,context))return;
-    if (owned_vanilla_bootstrap()) return;
+extern "C" void dkr_custom_tracks_prepare_level(std::uint8_t* rdram, recomp_context* context) {
+    if (dkr::runtime::legacy::frozen_course_hook("prepare_level", rdram, context))
+        return;
+    if (owned_vanilla_bootstrap())
+        return;
     const auto level = static_cast<std::int32_t>(context->r4);
     // The heap alloc_displaylist_heap is about to build comes out of the pool.
     grow_main_pool_for_level(rdram, level);
@@ -868,16 +849,17 @@ extern "C" void dkr_custom_tracks_prepare_level(std::uint8_t* rdram,
 // Called by the existing level_load scene-reset hook before retail consumes
 // the vehicle argument. Only gameplay on the armed track changes; menus and
 // Track Select retain their choices. Also covers L+Z and switching test tracks.
-extern "C" void dkr_custom_tracks_prepare_vehicle(std::uint8_t* rdram,
-                                                  recomp_context* context) {
-    if(dkr::runtime::legacy::frozen_online_resources())return;
-    if (owned_vanilla_bootstrap()) return;
+extern "C" void dkr_custom_tracks_prepare_vehicle(std::uint8_t* rdram, recomp_context* context) {
+    if (dkr::runtime::legacy::frozen_online_resources())
+        return;
+    if (owned_vanilla_bootstrap())
+        return;
     namespace addresses = dkr::runtime::revision_addresses;
     const auto level = static_cast<std::int32_t>(context->r4);
     const auto players_minus_one = static_cast<std::int32_t>(context->r5);
     const auto armed = dkr::runtime::custom_tracks::track_override();
     if (armed < 0 || level != armed || players_minus_one < 0 || players_minus_one >= 4 ||
-        read_word(rdram, addresses::GameMode) != 0) { // GAMEMODE_INGAME
+        read_word(rdram, addresses::current().GameMode) != 0) { // GAMEMODE_INGAME
         return;
     }
     const auto* payload = dkr::runtime::active_payload();
@@ -885,26 +867,27 @@ extern "C" void dkr_custom_tracks_prepare_vehicle(std::uint8_t* rdram,
         !payload->set_level_default_vehicle) {
         return;
     }
-    recomp_context call = *context;
-    payload->leveltable_vehicle_default(rdram, &call);
+    dkr::runtime::GuestCallContext guest(*context);
+    recomp_context& call = guest.context;
+    payload->leveltable_vehicle_default(rdram, guest.get());
     const auto vehicle = static_cast<std::int32_t>(call.r2);
     auto selected = vehicle;
     // The addon's debug override may name a boss/special vehicle. Preserve it
     // as the load argument, but player-selection arrays index three vehicle
     // records and must remain within the authored normal vehicles for the AI.
     if (selected < 0 || selected >= 3) {
-        call = *context;
-        payload->leveltable_vehicle_usable(rdram, &call);
+        guest.reset(*context);
+        payload->leveltable_vehicle_usable(rdram, guest.get());
         const auto allowed = static_cast<std::uint32_t>(call.r2);
         selected = (allowed & 1U) ? 0 : (allowed & 2U) ? 1 : (allowed & 4U) ? 2 : 0;
     }
     for (int player = 0; player <= players_minus_one; ++player) {
-        MEM_B(player, rdram_address(addresses::PlayerSelectVehicle)) = selected;
+        MEM_B(player, rdram_address(addresses::current().PlayerSelectVehicle)) = selected;
     }
-    call = *context;
+    guest.reset(*context);
     call.r4 = vehicle;
-    payload->set_level_default_vehicle(rdram, &call);
+    payload->set_level_default_vehicle(rdram, guest.get());
     context->r7 = static_cast<gpr>(vehicle);
-    std::fprintf(stderr, "[track-lab] level=%d vehicle=%d selected=%d players=%d\n",
-                 level, vehicle, selected, players_minus_one + 1);
+    std::fprintf(stderr, "[track-lab] level=%d vehicle=%d selected=%d players=%d\n", level, vehicle, selected,
+                 players_minus_one + 1);
 }

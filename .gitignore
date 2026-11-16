@@ -148,3 +148,16 @@ runtime-recomp/build/
 # moved - and docs/ASSET_POLICY.md forbids committing extracted maps. They are
 # local test artifacts; rebuild them from Blender rather than sharing them.
 /custom-tracks/
+
+# Local Cloudflare development state
+/.wrangler/
+
+# AI coding agents: personal permissions and per-session hook state
+/.claude/settings.local.json
+/.claude/session-base
+/.claude/session-base.*.tmp
+
+# Pinned Node tools for the services tests (npm ci in services/test-tools)
+/services/test-tools/node_modules/
+# Ruff writes local lint cache on both operating systems.
+.ruff_cache/

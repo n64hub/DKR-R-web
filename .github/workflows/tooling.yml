@@ -1,0 +1,201 @@
+name: Lint and static analysis
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  # Required check. Every step that fails here is green on main today; checks
+  # that still need the B9 autofix commit run in the advisory step below.
+  lint:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # the diff-mode guard needs the merge base
+      - name: Install verified lint tools
+        run: |
+          tool_dir="$RUNNER_TEMP/lint-tools"
+          python3 -m venv "$tool_dir"
+          "$tool_dir/bin/python" -m pip install --quiet \
+            --require-hashes --only-binary=:all: -r .github/lint-tools.txt
+          curl --fail --silent --show-error --location \
+            https://github.com/mvdan/sh/releases/download/v3.14.1/shfmt_v3.14.1_linux_amd64 \
+            --output "$tool_dir/bin/shfmt"
+          echo "76e77641faa025814b77f153b29796b8e6fa2fca03e0c76a691608b86c7ea7bf  $tool_dir/bin/shfmt" | sha256sum --check
+          chmod +x "$tool_dir/bin/shfmt"
+          echo "$tool_dir/bin" >>"$GITHUB_PATH"
+      - name: Ruff (E, F, W, I with the pyproject.toml baseline)
+        run: ruff check --output-format=github
+      - name: Ruff format
+        run: ruff format --check
+      # The tree is formatted, so clang-format and gersemi from the pinned
+      # tools above must leave it unchanged (.clang-format, .gersemirc).
+      - name: C/C++ and CMake format
+        run: python3 scripts/format_sources.py --check --local
+      # Same scope as the pre-commit shfmt hook. No flags, so shfmt reads the
+      # [*.sh] section of .editorconfig.
+      - name: shfmt
+        run: git ls-files -z '*.sh' ':(exclude)patches/' ':(exclude)extern/' ':(exclude)tests/fixtures/' | xargs -0 shfmt -d
+      - name: Pattern guard and tooling tests
+        run: python3 scripts/check.py --suite guard,tooling
+      # Strict typing for the tooling scripts listed in pyproject.toml
+      # ([tool.pyright]); the version is exact so results don't drift.
+      - name: Pyright (strict tooling scripts)
+        run: npx --yes pyright@1.1.414 --project pyproject.toml
+      # The tree check above can't tell new baseline entries from old ones, so
+      # PRs also run the guard against their base: the baseline never grows.
+      - name: Pattern guard against the PR base
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: python3 scripts/pattern_guard.py --diff "$BASE_SHA"
+      # Report only until shellcheck's remaining warnings are fixed by hand.
+      - name: shellcheck (advisory)
+        continue-on-error: true
+        run: |
+          status=0
+          git ls-files -z '*.sh' ':(exclude)patches/' | xargs -0 shellcheck || status=1
+          exit "$status"
+
+  # Advisory: not a required check for the first 4 weeks. Findings on changed
+  # lines show up as PR annotations; WarningsAsErrors hits and changed TUs with
+  # no compile command fail the job.
+  tidy:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/build/ccache
+      CCACHE_MAXSIZE: 500M
+      CCACHE_COMPILERCHECK: content
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      # The same hash-verified clang-format the lint job uses (lint-tools.txt).
+      # tidy_changed.py refuses any other version.
+      - name: Install verified clang-format
+        run: |
+          tool_dir="$RUNNER_TEMP/lint-tools"
+          python3 -m venv "$tool_dir"
+          "$tool_dir/bin/python" -m pip install --quiet \
+            --require-hashes --only-binary=:all: -r .github/lint-tools.txt
+          echo "$tool_dir/bin" >>"$GITHUB_PATH"
+      # Changed means different from the merge base *formatted with the pinned
+      # clang-format*, so a formatting-only commit selects nothing (see
+      # scripts/tidy_changed.py).
+      - name: Find changed first-party C/C++
+        id: changes
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          merge_base="$(git merge-base "$BASE_SHA" HEAD)"
+          echo "merge-base=$merge_base" >>"$GITHUB_OUTPUT"
+          python3 scripts/tidy_changed.py changed --merge-base "$merge_base" >"$RUNNER_TEMP/changed.txt"
+          count="$(wc -l <"$RUNNER_TEMP/changed.txt")"
+          echo "count=$count" >>"$GITHUB_OUTPUT"
+          echo "$count changed first-party C/C++ files"
+      - name: Install LLVM 18 and build tools
+        if: steps.changes.outputs.count != '0'
+        run: sudo apt-get update && sudo apt-get install -y clang-18 clang-tidy-18 cmake ninja-build ccache libcurl4-openssl-dev
+      - name: Prepare pinned runtime dependencies
+        if: steps.changes.outputs.count != '0'
+        uses: ./.github/actions/prepare-dependencies # zizmor: ignore[self-repository] -- actionlint 1.7.12 compatibility; checkout uses this workflow revision.
+      - name: Restore compiler cache
+        if: steps.changes.outputs.count != '0'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build/ccache
+          key: ccache-tidy-v1-clang-18-${{ github.sha }}
+          restore-keys: ccache-tidy-v1-clang-18-
+      # Generated headers come from the build, so tidy needs a built tree, not
+      # just a configured one.
+      - name: Configure and build host preset with clang-18
+        if: steps.changes.outputs.count != '0'
+        working-directory: runtime-recomp
+        run: |
+          cmake --preset host -DCMAKE_C_COMPILER=clang-18 -DCMAKE_CXX_COMPILER=clang++-18 \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          cmake --build --preset host --parallel
+      - name: Save compiler cache
+        if: ${{ success() && steps.changes.outputs.count != '0' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build/ccache
+          key: ccache-tidy-v1-clang-18-${{ github.sha }}
+      - name: Changed translation units must have a compile command
+        if: steps.changes.outputs.count != '0'
+        run: |
+          python3 - "$RUNNER_TEMP/changed.txt" <<'EOF'
+          import json, os, sys
+          root = os.getcwd()
+          database = json.load(open("build/host/compile_commands.json"))
+          compiled = {os.path.relpath(os.path.realpath(os.path.join(e["directory"], e["file"])), root) for e in database}
+          skipped = {line.strip() for line in open(".github/tidy-skip.txt") if line.strip() and not line.startswith("#")}
+          changed = [line.strip() for line in open(sys.argv[1]) if line.strip().endswith((".c", ".cc", ".cpp"))]
+          missing = [path for path in changed if path not in compiled and path not in skipped]
+          for path in missing:
+              print(f"::error file={path}::not built by the host preset, so clang-tidy cannot check it; build it in host or add it to .github/tidy-skip.txt")
+          sys.exit(1 if missing else 0)
+          EOF
+      - name: clang-tidy on changed lines
+        if: steps.changes.outputs.count != '0'
+        env:
+          MERGE_BASE: ${{ steps.changes.outputs.merge-base }}
+        run: |
+          # Translation units the host preset doesn't compile have no compile
+          # command (tidy-skip.txt lists them), so they stay out of the run.
+          python3 - "$RUNNER_TEMP/changed.txt" >"$RUNNER_TEMP/tidy-files.txt" <<'EOF'
+          import json, os, sys
+          root = os.getcwd()
+          database = json.load(open("build/host/compile_commands.json"))
+          compiled = {os.path.relpath(os.path.realpath(os.path.join(e["directory"], e["file"])), root) for e in database}
+          for line in open(sys.argv[1]):
+              path = line.strip()
+              if path and (not path.endswith((".c", ".cc", ".cpp")) or path in compiled):
+                  print(path)
+          EOF
+          set +e
+          python3 scripts/tidy_changed.py diff --merge-base "$MERGE_BASE" --files "$RUNNER_TEMP/tidy-files.txt" |
+            python3 /usr/lib/llvm-18/share/clang/clang-tidy-diff.py -p1 -path build/host \
+              -clang-tidy-binary clang-tidy-18 -iregex '.*\.(c|cc|cpp|h|hpp)' -j 4 -quiet >"$RUNNER_TEMP/tidy.log" 2>&1
+          set -e
+          sed -nE "s#^($PWD/)?([^:]+):([0-9]+):([0-9]+): (warning|error): (.*)\$#::\5 file=\2,line=\3,col=\4::\6#p" "$RUNNER_TEMP/tidy.log"
+          {
+            echo '### clang-tidy (changed lines, advisory)'
+            echo '```'
+            grep -E ': (warning|error): ' "$RUNNER_TEMP/tidy.log" | sed "s|^$PWD/||" || echo 'No findings.'
+            echo '```'
+          } >>"$GITHUB_STEP_SUMMARY"
+          # A header checked on its own often can't find generated or renderer
+          # includes. That's a compile error, not a finding: the summary shows
+          # it, and the job fails on findings and on compile errors in files
+          # that have a compile command.
+          python3 - "$RUNNER_TEMP/tidy.log" "$RUNNER_TEMP/tidy-files.txt" <<'EOF'
+          import os, re, sys
+          root = os.getcwd()
+          sources = {line.strip() for line in open(sys.argv[2]) if line.strip().endswith((".c", ".cc", ".cpp"))}
+          pattern = re.compile(r"^(?:%s/)?([^:]+):\d+:\d+: error: (.*)$" % re.escape(root))
+          failures = []
+          for line in open(sys.argv[1], errors="replace"):
+              match = pattern.match(line)
+              if match and (os.path.normpath(match[1]) in sources or "[clang-diagnostic-" not in match[2]):
+                  failures.append(line.rstrip())
+          print("\n".join(failures))
+          sys.exit(1 if failures else 0)
+          EOF

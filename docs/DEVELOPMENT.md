@@ -1,8 +1,16 @@
 # DKR-R development guide
 
-## v1.0.7 release contract
+## v1.0.15 release contract
 
-The final release recipe and prepared-input contract are in patches/release-prep/v1.0.7/BUILDING.txt. The SDK 2 Bible/public headers describe supported tools and API 1 compatibility. Gameplay/hardware acceptance is owner-led; compilation and static inspection are not runtime acceptance.
+The release steps and prepared-input contract are in [Building](BUILDING.md#release-packages). The SDK 2 Bible/public headers describe supported tools and API 1 compatibility. Gameplay/hardware acceptance is owner-led; compilation and static inspection are not runtime acceptance.
+
+Edit source and documentation in place; nothing is layered over the tree.
+
+The first-party file-picker module owns the bounded child-process protocol and
+private desktop helper. Crash reporting owns native fault context and producer
+identity; collecting a report after an update must retain the older identity.
+Player Select label layout is derived presentation state, not rollback state.
+Keep these boundaries when extending the existing tests and compatibility layer.
 
 Keep the changes focused and reproducible. Project-owned runtime code lives in
 `runtime-recomp/src/game`, tests in `runtime-recomp/tests`, release assets in
@@ -11,7 +19,7 @@ Keep the changes focused and reproducible. Project-owned runtime code lives in
 
 ## First contribution: tests without a ROM
 
-Start with Git and Python 3.10 or newer. From the repository root:
+Start with Git and Python 3.11 or newer. From the repository root:
 
 ```sh
 python3 scripts/check.py
@@ -19,12 +27,19 @@ python3 scripts/check.py --list
 python3 scripts/check.py --suite tooling
 ```
 
-The default command runs synthetic tooling tests, release metadata checks and
-the source asset scan. It stops at the first failure and never downloads
+The default command runs the pattern guard, synthetic tooling tests, release
+metadata checks and the source asset scan. `--suite` repeats and takes comma
+lists (`--suite guard,tooling`). It stops at the first failure and never downloads
 anything or changes dependency checkouts. `--list` shows the selected commands.
 On Windows, use `python` in place of `python3`; POSIX-only tests report skips.
 To run the Track Lab Python suites, use `--suite track-lab`. Missing private
 fixtures are reported as SKIP, not as successful retail-content tests.
+Tooling tests that need CMake (and Ninja) run in the opt-in `--suite host-tools`
+(CTest runs them too); `--suite all` includes both.
+The tooling suite also runs `runtime-recomp/tests/replay_probe/test_generator.py`
+(the replay probe generator's pins and ABI checks, CTest `ReplayProbePipelineControlFlow`)
+when `build/generated/v77` and `v80` and the `extern/` checkouts exist, and
+prints a skip notice otherwise.
 
 For a single regression, invoke its test file directly, for example:
 
@@ -37,7 +52,7 @@ C++ host tests also need CMake 3.24+, a C++20 compiler and Ninja (or Visual
 Studio 2022 on Windows). Prepare the pinned source dependencies once:
 
 ```sh
-python3 scripts/bootstrap_dependencies.py --only n64-modern-runtime --only rt64 --only gekkonet --only monocypher --only libdatachannel --only mbedtls --only sdl3
+python3 scripts/bootstrap_dependencies.py --only n64-modern-runtime --only rt64 --only gekkonet --only monocypher --only libdatachannel --only mbedtls --only sdl3 --only dkr-decomp
 python3 scripts/apply_dependency_patches.py
 cd runtime-recomp
 cmake --preset host

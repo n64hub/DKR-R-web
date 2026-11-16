@@ -4,32 +4,32 @@ set -euo pipefail
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIRECTORY="${DKR_LINUX_BUILD_DIR:-${PROJECT_ROOT}/build/dkr-runtime-linux}"
 if [[ -f "${BUILD_DIRECTORY}/CMakeCache.txt" ]] &&
-   grep -Eq '^DKR_EXPERIMENTAL_RENDER_QUALIFICATION:BOOL=(ON|1|TRUE|YES)[[:space:]]*$' "${BUILD_DIRECTORY}/CMakeCache.txt"; then
+  grep -Eq '^DKR_EXPERIMENTAL_RENDER_QUALIFICATION:BOOL=(ON|1|TRUE|YES)[[:space:]]*$' "${BUILD_DIRECTORY}/CMakeCache.txt"; then
   echo 'Refusing to package private experimental GPU retirement qualification. Reconfigure and rebuild with DKR_EXPERIMENTAL_RENDER_QUALIFICATION=OFF.' >&2
   exit 1
 fi
 if [[ -f "${BUILD_DIRECTORY}/CMakeCache.txt" ]] &&
-   grep -Eq '^DKR_REPLAY_QUALIFICATION:BOOL=(ON|1|TRUE|YES)[[:space:]]*$' "${BUILD_DIRECTORY}/CMakeCache.txt"; then
+  grep -Eq '^DKR_REPLAY_QUALIFICATION:BOOL=(ON|1|TRUE|YES)[[:space:]]*$' "${BUILD_DIRECTORY}/CMakeCache.txt"; then
   echo 'Refusing to package private replay fixture capture.' >&2
   exit 1
 fi
 if [[ -f "${BUILD_DIRECTORY}/CMakeCache.txt" ]] &&
-   grep -Eq '^DKR_ANDROID_RENDER_QUALIFICATION:BOOL=(ON|1|TRUE|YES)[[:space:]]*$' "${BUILD_DIRECTORY}/CMakeCache.txt"; then
+  grep -Eq '^DKR_ANDROID_RENDER_QUALIFICATION:BOOL=(ON|1|TRUE|YES)[[:space:]]*$' "${BUILD_DIRECTORY}/CMakeCache.txt"; then
   echo 'Refusing to package private Android renderer qualification.' >&2
   exit 1
 fi
 if [[ -f "${BUILD_DIRECTORY}/CMakeCache.txt" ]] &&
-   grep -Eq '^DKR_WATER_QUALIFICATION:BOOL=(ON|1|TRUE|YES)[[:space:]]*$' "${BUILD_DIRECTORY}/CMakeCache.txt"; then
+  grep -Eq '^DKR_WATER_QUALIFICATION:BOOL=(ON|1|TRUE|YES)[[:space:]]*$' "${BUILD_DIRECTORY}/CMakeCache.txt"; then
   echo 'Refusing to package private water-scene qualification.' >&2
   exit 1
 fi
 if [[ -f "${BUILD_DIRECTORY}/CMakeCache.txt" ]] &&
-   grep -Eq '^DKR_TASK_QUALIFICATION:BOOL=(ON|1|TRUE|YES)[[:space:]]*$' "${BUILD_DIRECTORY}/CMakeCache.txt"; then
+  grep -Eq '^DKR_TASK_QUALIFICATION:BOOL=(ON|1|TRUE|YES)[[:space:]]*$' "${BUILD_DIRECTORY}/CMakeCache.txt"; then
   echo 'Refusing to package private host-task fault injection. Rebuild with DKR_TASK_QUALIFICATION=OFF.' >&2
   exit 1
 fi
 if [[ -f "${BUILD_DIRECTORY}/CMakeCache.txt" ]] &&
-   grep -Eq '^DKR_LEGACY_QUALIFICATION:BOOL=(ON|1|TRUE|YES)[[:space:]]*$' "${BUILD_DIRECTORY}/CMakeCache.txt"; then
+  grep -Eq '^DKR_LEGACY_QUALIFICATION:BOOL=(ON|1|TRUE|YES)[[:space:]]*$' "${BUILD_DIRECTORY}/CMakeCache.txt"; then
   echo 'Refusing to package a private legacy-content qualification build. Reconfigure and rebuild with DKR_LEGACY_QUALIFICATION=OFF first.' >&2
   exit 1
 fi
@@ -42,37 +42,47 @@ INPUT_HOST_DIRECTORY="${BUILD_DIRECTORY}/bin/Release/libexec/dkr-r"
 INPUT_HOST="${INPUT_HOST_DIRECTORY}/DKR-R-InputHost"
 MOD_WORKER="${INPUT_HOST_DIRECTORY}/DKR-R-ModWorker"
 UPDATE_HELPER="${INPUT_HOST_DIRECTORY}/DKR-R-Updater"
+FILE_PICKER="${INPUT_HOST_DIRECTORY}/DKR-R-FilePicker"
 SDL3_LIBRARY="${INPUT_HOST_DIRECTORY}/libSDL3.so.0"
-VERSION_FILE_VALUE="$(tr -d '\r\n' < "${PROJECT_ROOT}/VERSION")"
+VERSION_FILE_VALUE="$(tr -d '\r\n' <"${PROJECT_ROOT}/VERSION")"
 VERSION="${DKR_RELEASE_VERSION:-${VERSION_FILE_VALUE}}"
 EXPERIMENTAL_RACE_TEST=0
 if grep -Eq '^DKR_EXPERIMENTAL_RACE_TEST:BOOL=(ON|1|TRUE|YES)[[:space:]]*$' "${BUILD_DIRECTORY}/CMakeCache.txt"; then
   EXPERIMENTAL_RACE_TEST=1
   if [[ "${VERSION}" != 1.0.5 && "${VERSION}" != 1.0.6 && "${VERSION}" != 1.0.7 && "${VERSION}" != 1.0.7+beta.2 && "${VERSION}" != 1.0.7+beta.3 && "${VERSION}" != 1.0.7+beta.4 && "${VERSION}" != 1.0.7+beta.5 ]]; then
-  [[ "${VERSION}" == *experimental* || "${VERSION}" == *rollback-test* || "${VERSION}" == 1.0.5-beta.15 || "${VERSION}" == 1.0.5-beta.15-playtest.[23456789] || "${VERSION}" == 1.0.5-beta.15-playtest.10 || "${VERSION}" == 1.0.5-beta.15-playtest.11 || "${VERSION}" == 1.0.5-beta.15-playtest.12 || "${VERSION}" == 1.0.5-beta.15-playtest.14 || "${VERSION}" == 1.0.5-beta.15-playtest.15 || "${VERSION}" == 1.0.5-beta.15-playtest.15-fix.[12] || "${VERSION}" == 1.0.5-beta.15-playtest.16 || "${VERSION}" == 1.0.5-beta.15-playtest.16-fix.[12] ]] || { echo 'Experimental builds require a distinct experimental version or an approved Beta 15 playtest candidate.' >&2; exit 1; }
-fi
+    [[ "${VERSION}" == *experimental* || "${VERSION}" == *rollback-test* || "${VERSION}" == 1.0.5-beta.15 || "${VERSION}" == 1.0.5-beta.15-playtest.[23456789] || "${VERSION}" == 1.0.5-beta.15-playtest.10 || "${VERSION}" == 1.0.5-beta.15-playtest.11 || "${VERSION}" == 1.0.5-beta.15-playtest.12 || "${VERSION}" == 1.0.5-beta.15-playtest.14 || "${VERSION}" == 1.0.5-beta.15-playtest.15 || "${VERSION}" == 1.0.5-beta.15-playtest.15-fix.[12] || "${VERSION}" == 1.0.5-beta.15-playtest.16 || "${VERSION}" == 1.0.5-beta.15-playtest.16-fix.[12] ]] || {
+      echo 'Experimental builds require a distinct experimental version or an approved Beta 15 playtest candidate.' >&2
+      exit 1
+    }
+  fi
 fi
 # Runtime checks are on by default. Release maintainers can explicitly reserve
 # execution/acceptance for their own machines without running the game here.
 SKIP_RUNTIME_TESTS="${DKR_SKIP_RUNTIME_TESTS:-0}"
 DEFER_RUNTIME_TESTS_TO_USER="${DKR_DEFER_RUNTIME_TESTS_TO_USER:-0}"
 [[ "${SKIP_RUNTIME_TESTS}" == 0 || "${SKIP_RUNTIME_TESTS}" == 1 ]] || {
-  echo 'DKR_SKIP_RUNTIME_TESTS must be 0 or 1' >&2; exit 1;
+  echo 'DKR_SKIP_RUNTIME_TESTS must be 0 or 1' >&2
+  exit 1
 }
 [[ "${DEFER_RUNTIME_TESTS_TO_USER}" == 0 || "${DEFER_RUNTIME_TESTS_TO_USER}" == 1 ]] || {
-  echo 'DKR_DEFER_RUNTIME_TESTS_TO_USER must be 0 or 1' >&2; exit 1;
+  echo 'DKR_DEFER_RUNTIME_TESTS_TO_USER must be 0 or 1' >&2
+  exit 1
 }
 if [[ "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ && "${SKIP_RUNTIME_TESTS}" != 0 && "${DEFER_RUNTIME_TESTS_TO_USER}" != 1 ]]; then
-  echo 'Public release runtime checks need explicit maintainer deferral: DKR_DEFER_RUNTIME_TESTS_TO_USER=1.' >&2; exit 1
+  echo 'Public release runtime checks need explicit maintainer deferral: DKR_DEFER_RUNTIME_TESTS_TO_USER=1.' >&2
+  exit 1
 fi
 if [[ "${SKIP_RUNTIME_TESTS}" == 1 ]]; then
   echo 'Packaging only: runtime execution is deferred to the maintainer; this is not an acceptance pass.'
 fi
 ARCH="${DKR_LINUX_ARCH:-x86_64}"
 case "${ARCH}" in
-  x86_64) ELF_MACHINE='Advanced Micro Devices X86-64' ;;
-  aarch64) ELF_MACHINE='AArch64' ;;
-  *) echo "Unsupported AppImage architecture: ${ARCH}" >&2; exit 1 ;;
+x86_64) ELF_MACHINE='Advanced Micro Devices X86-64' ;;
+aarch64) ELF_MACHINE='AArch64' ;;
+*)
+  echo "Unsupported AppImage architecture: ${ARCH}" >&2
+  exit 1
+  ;;
 esac
 APPDIR="${DKR_APPDIR:-${PROJECT_ROOT}/dist/DKR-R-${VERSION}-Linux-${ARCH}.AppDir}"
 OUTPUT="${DKR_APPIMAGE_OUTPUT:-${PROJECT_ROOT}/dist/DKR-R-${VERSION}-Linux-${ARCH}.AppImage}"
@@ -93,17 +103,17 @@ validate_release_tree() {
     extension="${file##*.}"
     extension="${extension,,}"
     case "${extension}" in
-      z64|v64|n64|eep|mpk|sra|fla|o2r|otr|dkr-probe|dkr-bootstrap|dkr-component)
-        echo "Release staging contains prohibited game data: ${file}" >&2
-        return 1
-        ;;
+    z64 | v64 | n64 | eep | mpk | sra | fla | o2r | otr | dkr-probe | dkr-bootstrap | dkr-component)
+      echo "Release staging contains prohibited game data: ${file}" >&2
+      return 1
+      ;;
     esac
     magic="$(od -An -tx1 -N4 "${file}" 2>/dev/null | tr -d '[:space:]')"
     case "${magic}" in
-      80371240|37804012|40123780)
-        echo "Release staging contains an N64 ROM header: ${file}" >&2
-        return 1
-        ;;
+    80371240 | 37804012 | 40123780)
+      echo "Release staging contains an N64 ROM header: ${file}" >&2
+      return 1
+      ;;
     esac
   done < <(find "${root}" -type f -print0)
   [[ "${inspected}" -gt 0 ]] || {
@@ -121,14 +131,15 @@ collect_linux_dependency_notices() {
   local library_count copyright_count
 
   mkdir -p "${notice_root}/common-licenses"
-  : > "${manifest}"
+  install -m 0644 /usr/share/doc/libstdc++6/copyright "${notice_root}/GCC-RUNTIME-COPYRIGHT.txt"
+  : >"${manifest}"
   printf '%s\n' \
     'Debian package notice directories deployed with the Linux dependencies:' \
-    >> "${manifest}"
+    >>"${manifest}"
 
   while IFS= read -r -d '' copyright_file; do
     package_directory="$(basename "$(dirname "${copyright_file}")")"
-    printf '%s\n' "${package_directory}" >> "${manifest}"
+    printf '%s\n' "${package_directory}" >>"${manifest}"
   done < <(find "${root}/usr/share/doc" -mindepth 2 -maxdepth 2 \
     -type f -name copyright -print0 | sort -z)
 
@@ -147,7 +158,10 @@ collect_linux_dependency_notices() {
   echo "Collected ${copyright_count} dependency copyright records for ${library_count} bundled libraries"
 }
 
-[[ -x "${BINARY}" ]] || { echo "Missing Linux release binary: ${BINARY}" >&2; exit 1; }
+[[ -x "${BINARY}" ]] || {
+  echo "Missing Linux release binary: ${BINARY}" >&2
+  exit 1
+}
 if ! strings "${BINARY}" | grep -Fx "${VERSION}" >/dev/null; then
   echo "Release executable does not contain requested version ${VERSION}; reconfigure and rebuild before packaging." >&2
   exit 1
@@ -157,21 +171,52 @@ if grep -aEq 'DKR_WATER_TEST_MAP|\[perf\]\[private-water-preview\]' "${BINARY}";
   exit 1
 fi
 READELF="${READELF:-readelf}"
-command -v "${READELF}" >/dev/null || { echo "Missing ELF inspector: ${READELF}" >&2; exit 1; }
+command -v "${READELF}" >/dev/null || {
+  echo "Missing ELF inspector: ${READELF}" >&2
+  exit 1
+}
 for architecture_file in "${BINARY}" "${MOD_WORKER}" "${INPUT_HOST}" "${SDL3_LIBRARY}" "${UPDATE_HELPER}"; do
   "${READELF}" -h "${architecture_file}" | grep -F "${ELF_MACHINE}" >/dev/null || {
-    echo "Wrong architecture (expected ${ARCH}): ${architecture_file}" >&2; exit 1;
+    echo "Wrong architecture (expected ${ARCH}): ${architecture_file}" >&2
+    exit 1
   }
 done
-[[ -x "${MOD_WORKER}" ]] || { echo "Missing legacy importer: ${MOD_WORKER}" >&2; exit 1; }
-[[ -x "${INPUT_HOST}" ]] || { echo "Missing private SDL3 input host: ${INPUT_HOST}" >&2; exit 1; }
-[[ -f "${SDL3_LIBRARY}" ]] || { echo "Missing private SDL3 runtime: ${SDL3_LIBRARY}" >&2; exit 1; }
-[[ -x "${LINUXDEPLOY}" ]] || { echo "Missing linuxdeploy: ${LINUXDEPLOY}" >&2; exit 1; }
-[[ -x "${APPIMAGE_PLUGIN}" ]] || { echo "Missing linuxdeploy AppImage plugin: ${APPIMAGE_PLUGIN}" >&2; exit 1; }
-[[ -f "${ICON_FILE}" ]] || { echo "Missing Linux application icon: ${ICON_FILE}" >&2; exit 1; }
-command -v patchelf >/dev/null || { echo "Missing required command: patchelf" >&2; exit 1; }
-[[ ! -e "${APPDIR}" ]] || { echo "AppDir already exists; choose a fresh DKR_APPDIR: ${APPDIR}" >&2; exit 1; }
-[[ ! -e "${OUTPUT}" ]] || { echo "Output already exists; choose a fresh DKR_APPIMAGE_OUTPUT: ${OUTPUT}" >&2; exit 1; }
+[[ -x "${MOD_WORKER}" ]] || {
+  echo "Missing legacy importer: ${MOD_WORKER}" >&2
+  exit 1
+}
+[[ -x "${INPUT_HOST}" ]] || {
+  echo "Missing private SDL3 input host: ${INPUT_HOST}" >&2
+  exit 1
+}
+[[ -f "${SDL3_LIBRARY}" ]] || {
+  echo "Missing private SDL3 runtime: ${SDL3_LIBRARY}" >&2
+  exit 1
+}
+[[ -x "${LINUXDEPLOY}" ]] || {
+  echo "Missing linuxdeploy: ${LINUXDEPLOY}" >&2
+  exit 1
+}
+[[ -x "${APPIMAGE_PLUGIN}" ]] || {
+  echo "Missing linuxdeploy AppImage plugin: ${APPIMAGE_PLUGIN}" >&2
+  exit 1
+}
+[[ -f "${ICON_FILE}" ]] || {
+  echo "Missing Linux application icon: ${ICON_FILE}" >&2
+  exit 1
+}
+command -v patchelf >/dev/null || {
+  echo "Missing required command: patchelf" >&2
+  exit 1
+}
+[[ ! -e "${APPDIR}" ]] || {
+  echo "AppDir already exists; choose a fresh DKR_APPDIR: ${APPDIR}" >&2
+  exit 1
+}
+[[ ! -e "${OUTPUT}" ]] || {
+  echo "Output already exists; choose a fresh DKR_APPIMAGE_OUTPUT: ${OUTPUT}" >&2
+  exit 1
+}
 
 mkdir -p "${APPDIR}/usr/share/doc/dkr-port/licenses" "$(dirname "${OUTPUT}")"
 mkdir -p "${APPDIR}/usr/share/metainfo"
@@ -285,7 +330,7 @@ fi
 if [[ "${VERSION}" == 1.0.5-beta.15-playtest.16-fix.2 ]]; then
   install -m 0644 "${PROJECT_ROOT}/docs/BETA15-PLAYTEST16-MOD-LIBRARY.txt" "${APPDIR}/usr/share/doc/dkr-port/BETA15-PLAYTEST16-MOD-LIBRARY.txt"
 fi
-install -m 0644 "${PROJECT_ROOT}/patches/enhanced-water/LICENSE-WAVE-RACE.txt" "${APPDIR}/usr/share/doc/dkr-port/WAVE-RACE-WATER-LICENSE.txt"
+install -m 0644 "${PROJECT_ROOT}/runtime-recomp/src/water/LICENSE-WAVE-RACE.txt" "${APPDIR}/usr/share/doc/dkr-port/WAVE-RACE-WATER-LICENSE.txt"
 install -m 0644 "${PROJECT_ROOT}/docs/ONLINE_MULTIPLAYER.md" "${APPDIR}/usr/share/doc/dkr-port/ONLINE_MULTIPLAYER.md"
 install -m 0644 "${PROJECT_ROOT}/docs/UPDATES.md" "${APPDIR}/usr/share/doc/dkr-port/UPDATES.md"
 install -m 0644 "${PROJECT_ROOT}/docs/ONLINE-STABILITY.md" "${APPDIR}/usr/share/doc/dkr-port/ONLINE-STABILITY.md"
@@ -339,7 +384,43 @@ run_appimage "${LINUXDEPLOY}" --appimage-extract-and-run \
   --executable "${BINARY_STAGE}/DKR-R" \
   "${EXPERIMENTAL_DEPLOY_ARGS[@]}" \
   --desktop-file "${PROJECT_ROOT}/packaging/linux/dkr-port.desktop" \
-  --icon-file "${ICON_STAGE}/dkr-r.png"
+  --icon-file "${ICON_STAGE}/dkr-r.png" \
+  --custom-apprun "${PROJECT_ROOT}/packaging/linux/AppRun"
+
+# linuxdeploy's excludelist drops libwayland-client.so.0 while still bundling
+# SDL2, GTK, libwayland-egl and libwayland-cursor, which all need it, so hosts
+# without Wayland fail at startup (issue #45). A bundled copy older than the
+# host's would break host Mesa drivers, so it goes into a fallback directory
+# that packaging/linux/AppRun only exposes when the host has no copy.
+if [[ ! -e "${APPDIR}/usr/lib/libwayland-client.so.0" ]]; then
+  WAYLAND_CLIENT="${DKR_WAYLAND_CLIENT_LIBRARY:-}"
+  if [[ -z "${WAYLAND_CLIENT}" ]]; then
+    for library_directory in "/usr/lib/${ARCH}-linux-gnu" "/lib/${ARCH}-linux-gnu" /usr/lib64 /lib64 /usr/lib /lib; do
+      candidate="${library_directory}/libwayland-client.so.0"
+      if [[ -f "${candidate}" ]] && "${READELF}" -h "${candidate}" | grep -F "${ELF_MACHINE}" >/dev/null; then
+        WAYLAND_CLIENT="${candidate}"
+        break
+      fi
+    done
+  fi
+  [[ -n "${WAYLAND_CLIENT}" && -f "${WAYLAND_CLIENT}" ]] || {
+    echo "Missing ${ARCH} libwayland-client.so.0 for the AppImage fallback; install libwayland-client0 or set DKR_WAYLAND_CLIENT_LIBRARY." >&2
+    exit 1
+  }
+  "${READELF}" -h "${WAYLAND_CLIENT}" | grep -F "${ELF_MACHINE}" >/dev/null || {
+    echo "Wrong architecture for the libwayland-client fallback (expected ${ARCH}): ${WAYLAND_CLIENT}" >&2
+    exit 1
+  }
+  WAYLAND_COPYRIGHT="${DKR_WAYLAND_CLIENT_COPYRIGHT:-/usr/share/doc/libwayland-client0/copyright}"
+  [[ -f "${WAYLAND_COPYRIGHT}" ]] || {
+    echo "Missing libwayland-client copyright record: ${WAYLAND_COPYRIGHT}" >&2
+    exit 1
+  }
+  mkdir -p "${APPDIR}/usr/lib/wayland-fallback" "${APPDIR}/usr/share/doc/libwayland-client0"
+  install -m 0644 "${WAYLAND_CLIENT}" "${APPDIR}/usr/lib/wayland-fallback/libwayland-client.so.0"
+  patchelf --set-rpath '$ORIGIN/..' "${APPDIR}/usr/lib/wayland-fallback/libwayland-client.so.0"
+  install -m 0644 "${WAYLAND_COPYRIGHT}" "${APPDIR}/usr/share/doc/libwayland-client0/copyright"
+fi
 
 mkdir -p "${APPDIR}/usr/bin/assets/ui/Icons"
 install -m 0644 "${PROJECT_ROOT}/assets/ui/Icons/DKR-R-Logo.bmp" \
@@ -366,6 +447,8 @@ install -m 0644 "${PROJECT_ROOT}/assets/controllers/gamecontrollerdb.txt" \
 mkdir -p "${APPDIR}/usr/libexec/dkr-r"
 install -m 0755 "${MOD_WORKER}" "${APPDIR}/usr/libexec/dkr-r/DKR-R-ModWorker"
 install -m 0755 "${UPDATE_HELPER}" "${APPDIR}/usr/libexec/dkr-r/DKR-R-Updater"
+install -m 0755 "${FILE_PICKER}" "${APPDIR}/usr/libexec/dkr-r/DKR-R-FilePicker"
+patchelf --remove-rpath "${APPDIR}/usr/libexec/dkr-r/DKR-R-FilePicker"
 patchelf --set-rpath '$ORIGIN/../../lib' "${APPDIR}/usr/libexec/dkr-r/DKR-R-Updater"
 patchelf --set-rpath '$ORIGIN/../../lib' "${APPDIR}/usr/libexec/dkr-r/DKR-R-ModWorker"
 install -m 0755 "${INPUT_HOST}" \
@@ -375,22 +458,33 @@ install -m 0755 "${SDL3_LIBRARY}" \
 patchelf --set-rpath '$ORIGIN' \
   "${APPDIR}/usr/libexec/dkr-r/DKR-R-InputHost"
 if [[ "${SKIP_RUNTIME_TESTS}" == 0 ]]; then
-[[ "$(timeout 15 "${APPDIR}/usr/libexec/dkr-r/DKR-R-Updater" --self-test)" == 'DKR-R updater protocol 1' ]] || { echo 'Packaged updater helper is not compatible.' >&2; exit 1; }
-timeout 15 "${APPDIR}/usr/libexec/dkr-r/DKR-R-ModWorker" --self-test
-[[ "$(timeout 15 "${APPDIR}/usr/libexec/dkr-r/DKR-R-ModWorker" --online-capability)" == 'DKR-R online-prepare protocol 1' ]] || { echo 'Packaged ModWorker lacks online preparation support.' >&2; exit 1; }
-LD_LIBRARY_PATH="${APPDIR}/usr/libexec/dkr-r${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}" \
-  "${APPDIR}/usr/libexec/dkr-r/DKR-R-InputHost" --self-test --mappings \
-  "${APPDIR}/usr/bin/assets/controllers/gamecontrollerdb.txt"
+  [[ "$(timeout 15 "${APPDIR}/usr/libexec/dkr-r/DKR-R-Updater" --self-test)" == 'DKR-R updater protocol 1' ]] || {
+    echo 'Packaged updater helper is not compatible.' >&2
+    exit 1
+  }
+  timeout 15 "${APPDIR}/usr/libexec/dkr-r/DKR-R-ModWorker" --self-test
+  [[ "$(timeout 15 "${APPDIR}/usr/libexec/dkr-r/DKR-R-ModWorker" --online-capability)" == 'DKR-R online-prepare protocol 1' ]] || {
+    echo 'Packaged ModWorker lacks online preparation support.' >&2
+    exit 1
+  }
+  LD_LIBRARY_PATH="${APPDIR}/usr/libexec/dkr-r${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}" \
+    "${APPDIR}/usr/libexec/dkr-r/DKR-R-InputHost" --self-test --mappings \
+    "${APPDIR}/usr/bin/assets/controllers/gamecontrollerdb.txt"
 fi
 
+READELF="${READELF}" bash "${PROJECT_ROOT}/scripts/Check-AppDir-Closure.sh" "${APPDIR}" \
+  --host-resolved usr/libexec/dkr-r/DKR-R-FilePicker
 collect_linux_dependency_notices "${APPDIR}"
 validate_release_tree "${APPDIR}"
 run_appimage "${APPIMAGE_PLUGIN}" --appdir "${APPDIR}"
-[[ -s "${OUTPUT}" ]] || { echo "AppImage output is missing or empty: ${OUTPUT}" >&2; exit 1; }
+[[ -s "${OUTPUT}" ]] || {
+  echo "AppImage output is missing or empty: ${OUTPUT}" >&2
+  exit 1
+}
 if [[ "${SKIP_RUNTIME_TESTS}" == 0 ]]; then
-APPIMAGE_EXTRACT_AND_RUN=1 run_appimage "${OUTPUT}" --self-test-pak "${PAK_TEST}"
-SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy APPIMAGE_EXTRACT_AND_RUN=1 \
-  run_appimage "${OUTPUT}" --self-test-input-switch "${INPUT_SWITCH_TEST}"
+  APPIMAGE_EXTRACT_AND_RUN=1 run_appimage "${OUTPUT}" --self-test-pak "${PAK_TEST}"
+  SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy APPIMAGE_EXTRACT_AND_RUN=1 \
+    run_appimage "${OUTPUT}" --self-test-input-switch "${INPUT_SWITCH_TEST}"
 else
   echo 'WARNING: Runtime tests explicitly deferred; package runtime qualification remains pending.' >&2
 fi

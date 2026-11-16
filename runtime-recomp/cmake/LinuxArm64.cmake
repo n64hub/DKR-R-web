@@ -6,14 +6,18 @@ set(CMAKE_CROSSCOMPILING_EMULATOR /usr/bin/qemu-aarch64-static)
 set(DKR_ARM64_SYSROOT "" CACHE PATH "Optional isolated ARM64 dependency sysroot")
 if(DKR_ARM64_SYSROOT)
     get_filename_component(DKR_ARM64_SYSROOT "${DKR_ARM64_SYSROOT}" REALPATH)
-    if(NOT IS_DIRECTORY "${DKR_ARM64_SYSROOT}/usr/include" OR
-       NOT IS_DIRECTORY "${DKR_ARM64_SYSROOT}/usr/lib/aarch64-linux-gnu")
+    if(
+        NOT IS_DIRECTORY "${DKR_ARM64_SYSROOT}/usr/include"
+        OR NOT IS_DIRECTORY "${DKR_ARM64_SYSROOT}/usr/lib/aarch64-linux-gnu"
+    )
         message(FATAL_ERROR "ARM64 sysroot must contain the target headers and libraries")
     endif()
     set(CMAKE_SYSROOT "${DKR_ARM64_SYSROOT}")
     set(CMAKE_FIND_ROOT_PATH "${DKR_ARM64_SYSROOT}/usr;/usr/aarch64-linux-gnu")
+    set(CMAKE_CROSSCOMPILING_EMULATOR /usr/bin/qemu-aarch64-static -L "${DKR_ARM64_SYSROOT}")
 else()
     set(CMAKE_FIND_ROOT_PATH /usr/aarch64-linux-gnu)
+    set(CMAKE_CROSSCOMPILING_EMULATOR /usr/bin/qemu-aarch64-static -L /usr/aarch64-linux-gnu)
 endif()
 set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
 # Multiarch libraries installed beside the native host tools in the build image.

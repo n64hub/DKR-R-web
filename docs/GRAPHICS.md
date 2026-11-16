@@ -15,24 +15,59 @@ press Apply. Start at 60 FPS when diagnosing performance, then raise the target
 once your chosen settings are steady. More pixels, MSAA, supersampling, retained
 scenery and high-detail models can all add work.
 
+## Aspect ratio and render resolution
+
+In Modern, choose the aspect ratio first: Match window, 4:3, 5:4, 3:2, 16:9,
+16:10, 2560:1080, 3440:1440 or 32:9. The resolution list follows that shape.
+Borders preserve the image instead of stretching it to another ratio.
+
+Automatic - match window follows the available image area. Automatic - sharp
+integer scaling preserves the previous whole-number 240p scaling option.
+Explicit sizes include 720p, 1080p, 1440p and 2160p families, with additional
+sizes up to the bounded 8192-pixel target dimension, further limited by the
+GPU's reported maximum texture size after renderer startup. Wider formats have fewer
+high-resolution choices to stay inside that bound. These are render sizes,
+not monitor modes: 3840 x 2160 can render on a 1920 x 1080 display. Larger sizes
+need more GPU memory and processing power. The readout separates render size
+from output size. Pixel alignment inside RT64 can round framebuffer dimensions.
+
+Explicit resolution replaces the old Supersampling slider. Existing settings
+migrate with their effective render scale and downsample setting intact; choosing
+a new explicit size retires the old multiplier. Applying a performance preset
+sets its resolution again. Accurate remains original 4:3 and 30 FPS, and keeps
+your Modern choices for when you switch back. Camera, HUD and online fullscreen
+presentation use the same local aspect choice; it does not affect peer state.
+
 ## HUD and camera
+
+**HUD & effects** also contains the full CRT filter controls: enable, filter
+image, scaling, strength and custom PNG import. These are no longer duplicated
+in Textures. Your existing selection and imported masks are kept.
 
 **HUD layout** offers **4:3** or **Fit to window** for Modern one/two-player
 presentation. Whole groups move together; their artwork is not stretched.
 Three/four-player HUD placement remains separate. The custom HUD editor and
 size controls are not enabled. See [HUD layouts](HUD-WORKSHOP.md).
 
-FOV, clipping and scenery controls affect what the camera shows. The near-plane
+The offline FOV slider applies on the next game frame, including while paused,
+so you can see the change without loading another race. The existing online
+restriction remains. Clipping and scenery controls affect what the camera shows.
+The near-plane
 and camera-obstruction improvements reduce seeing through nearby surfaces;
 report reproducible gaps with the track, position, aspect ratio and FOV.
 
 The optional **ModernCamera++** code mod supplies camera presets, local
 profiles and live F7 tuning. Import/approve it like other Custom Magic Codes.
 Camera presentation and the shadow-interpolation correction are separate from
-shared simulation. See [Camera++](../patches/camera-plus/README.md).
+shared simulation (`runtime-recomp/cmake/Camera.cmake`).
 VR is unfinished and not a supported feature of this release.
 
 ## Vehicles and scenery
+
+Custom racers using the original car also receive lighting on its four tyre
+sprites. Their brightness follows the racer's light and physical wheel
+orientation instead of the camera-facing sprite plane. Sprite artwork,
+steering, animation, fog and transparency are preserved, online and offline.
 
 Maximum vehicle detail, keep-scenery switches, the ultrawide guard, view
 distances and retention let you choose how much remains visible. Bigger ranges
@@ -114,6 +149,25 @@ screen-space reflections. This does not change collisions, buoyancy or online
 simulation. High water and hardware tracing can be expensive; compare the same
 scene with Original before attributing a slowdown to netplay.
 
+## Graphics and memory fixes in v1.0.11
+
+I've given the normal game heap its missing expansion RAM headroom,
+while retaining the upper guard and existing allocation lifetimes.
+Allocation failures and missing HUD resources now have clearer logs.
+Queued graphics data is copied before it waits in the game scheduler,
+and the renderer keeps its own decode workspace. These changes do not
+alter the launcher. The renderer changes do not alter online simulation.
+
+Water animations retain their selection while frames are queued. Shared
+frames use one consistent decision, and complete animations can request
+evicted cache entries again, with bounded asynchronous retries. A pack
+replacing only some frames stays consistently vanilla for that animation.
+For example, one replacement out of 16 ripple frames is incomplete.
+The update does not fill in missing artwork or modify your texture pack.
+
+These fixes do not remove GPU, guest memory or mod complexity limits.
+If a problem remains, keep the logs and report the exact scene and packs.
+
 ## Textures and sound
 
 Texture packs, their priorities and CRT filters belong in
@@ -130,3 +184,12 @@ invalidates that decision. No extra water GPU pass was added for this fix.
 Logo scenes, moving Start Menu names and credits use the selected viewport.
 The copyright/recompilation text has a translucent rounded backing. Credits
 include full-width fades and lower sky, with bounded native readback.
+
+## v1.0.11 spectator and custom-car presentation
+
+Spectators choose All splits, Follow player or the T.T.-style director without
+changing racing input. Custom GPU-rendered cars use safe racer cameras in the
+director; original vehicles can use its cinematic view. Custom cars replace
+visuals, not physics, and their online choices remain admitted session state.
+The saved graphics preset display and previous water/camera fixes are retained.
+See [Spectators](SPECTATORS.md) and [Vehicles](VEHICLES.md).
