@@ -1432,7 +1432,18 @@ if(DKR_RUNTIME_BUILD_GENERATED OR DKR_RUNTIME_BUILD_RT64)
             NOMINMAX
     )
     # Shared saves and the store read their JSON with nlohmann/json.
-    target_include_directories(DKRPortGameCore PRIVATE "${DKR_LIBDATACHANNEL_SOURCE}/deps/json/include")
+    if(EMSCRIPTEN)
+        # A page has no libdatachannel checkout. N64ModernRuntime carries the same nlohmann/json (3.12.0) as
+        # json/json.hpp, which this nlohmann/json.hpp includes.
+        file(
+            CONFIGURE
+            OUTPUT "${CMAKE_BINARY_DIR}/web-include/nlohmann/json.hpp"
+            CONTENT "#pragma once\n#include \"${DKR_MODERN_RUNTIME_SOURCE}/thirdparty/json/json.hpp\"\n"
+        )
+        target_include_directories(DKRPortGameCore PRIVATE "${CMAKE_BINARY_DIR}/web-include")
+    else()
+        target_include_directories(DKRPortGameCore PRIVATE "${DKR_LIBDATACHANNEL_SOURCE}/deps/json/include")
+    endif()
     target_link_libraries(DKRPortGameCore PRIVATE DKRUpdateClient)
     include(cmake/FilePicker.cmake)
     dkr_add_file_picker()
@@ -1598,6 +1609,8 @@ if(DKR_RUNTIME_BUILD_GENERATED OR DKR_RUNTIME_BUILD_RT64)
         # The page (lib/N64Recomp-browser/frontend). No ROM: the player picks theirs on the page, and it stays in the
         # browser. SDL's controller mappings are the one asset the game reads; the rest are the launcher's.
         target_sources(DKRPortGameCore PRIVATE src/game/web_page.cpp src/game/web_shims.cpp)
+        # The game's sources include the frontend's headers (audio_output.h); the page links its sources.
+        target_include_directories(DKRPortGameCore PRIVATE "${DKRPORT_ROOT}/lib/N64Recomp-browser/frontend")
         if(TARGET DKRPortGame)
             add_subdirectory("${DKRPORT_ROOT}/lib/N64Recomp-browser/frontend" "${CMAKE_BINARY_DIR}/web_frontend")
             n64recomp_browser_frontend_page(DKRPortGame)

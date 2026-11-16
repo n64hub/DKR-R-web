@@ -140,12 +140,28 @@ class CreditsViewport {
         if (pair.colorImage.width != 320)
             return;
         const RT64::FixedRect native(0, 0, 320 * 4, height * 4);
-        const auto constrain = [&](auto& rect) {
+        const auto clip = [&](RT64::FixedRect& rect) {
             if (rect.isNull())
                 return;
             rect = rect.intersection(native);
             if (rect.isNull() || rect.isEmpty())
                 rect.reset();
+        };
+        const auto constrain = [&](auto& rect) {
+            if (rect.isNull())
+                return;
+            static_cast<RT64::FixedRect&>(rect) = rect.intersection(native);
+            if (rect.isNull() || rect.isEmpty()) {
+                rect.reset();
+                return;
+            }
+            // A web build's RT64 keeps the newest few rects drawn apart and the box of the older ones
+            // (rt64_framebuffer_pair.h, DrawnRect): each is held to the same bounds.
+            if constexpr (requires { rect.recent; rect.older; }) {
+                for (auto& recent : rect.recent)
+                    clip(recent);
+                clip(rect.older);
+            }
         };
         constrain(pair.drawColorRect);
         constrain(pair.drawDepthRect);

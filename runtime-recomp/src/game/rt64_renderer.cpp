@@ -802,10 +802,16 @@ void dkr::runtime::RT64Renderer::send_dl(const OSTask* task, std::uint8_t* rdram
     // A submission snapshot is only 8 MiB. The existing private camera/car
     // workspace supplies the disjoint 16-MiB decode arena; never write beyond
     // the snapshot, live RDRAM, or the canonical guest's 8-MiB ownership.
+#if defined(DKR_LOCAL_MODEL_DETAIL)
     static thread_local LocalModelRT64Pass ordinary_models;
     ordinary_models.prepare(detail_requested ? detail::ordinary_events() : std::span<const dkr_owned_draw_event>{},
                             detail_requested ? std::span<std::uint8_t>{camera_decoder_} : std::span<std::uint8_t>{},
                             presentation::task_scene_generation());
+    LocalModelRT64Pass* const ordinary = detail_requested ? &ordinary_models : nullptr;
+#else
+    // Without the local model kernels (a build of one revision: CMakeLists.txt) no model is replaced.
+    LocalModelRT64Pass* const ordinary = nullptr;
+#endif
     // DKR authors a new visual state at 30 Hz. Deriving that source cadence
     // from delayed VI history creates a positive feedback loop under load:
     // one late workload is misread as 20/15 Hz, RT64 schedules three or four
@@ -827,18 +833,18 @@ void dkr::runtime::RT64Renderer::send_dl(const OSTask* task, std::uint8_t* rdram
 #if defined(__ANDROID__)
             {
                 android_frame_budget::Scope decodeTiming(android_frame_budget::Region::Decoder);
-                f3ddkr_.process(*application_, *task, nullptr, nullptr, detail_requested ? &ordinary_models : nullptr,
+                f3ddkr_.process(*application_, *task, nullptr, nullptr, ordinary,
                                 camera_requested ? camera_pass_.get() : nullptr);
             }
             android_frame_budget::report();
 #else
-        f3ddkr_.process(*application_, *task, nullptr, nullptr, detail_requested ? &ordinary_models : nullptr,
+        f3ddkr_.process(*application_, *task, nullptr, nullptr, ordinary,
                         camera_requested ? camera_pass_.get() : nullptr);
 #endif
             record_track_performance(rdram_snapshot, start);
         } else {
             track_capture_.count = 0; // A later opt-in capture must not span the idle gap.
-            f3ddkr_.process(*application_, *task, nullptr, nullptr, detail_requested ? &ordinary_models : nullptr,
+            f3ddkr_.process(*application_, *task, nullptr, nullptr, ordinary,
                             camera_requested ? camera_pass_.get() : nullptr);
         }
 #if defined(__ANDROID__)

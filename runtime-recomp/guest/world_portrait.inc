@@ -2,6 +2,9 @@
     // Resolve this particular racer's roster slot, never replace a donor
     // globally: two custom racers may legitimately share the same donor.
     {
+        // runtime_legacy_mods.cpp's, declared here: the payload's funcs.h doesn't, and a call to an undeclared
+        // function is an error in a web build's guest code (WebAssembly checks a call's signature).
+        extern uint32_t dkr_legacy_character_portrait_lookup(uint8_t*, recomp_context*, uint32_t);
         const unsigned portrait_player=(uint16_t)MEM_H(0,ctx->r4);
         const unsigned portrait_index=MEM_BU(2,ctx->r4);
         const unsigned portrait_slot=portrait_player<4?portrait_player:

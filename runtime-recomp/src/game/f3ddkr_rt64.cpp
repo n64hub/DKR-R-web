@@ -27,8 +27,8 @@
 #include "credits_sky_rt64.hpp"
 #include "intro_caption_rt64.hpp"
 #include "intro_sky_rt64.hpp"
-#if !defined(__APPLE__)
-// Metal builds have no enhanced-water renderer (cmake/EnhancedWater.cmake).
+#if defined(DKR_ENHANCED_WATER)
+// Only a build with the enhanced-water renderer has it (cmake/EnhancedWater.cmake): Metal's has none, nor a web page's.
 #include "water_residency_rt64.hpp"
 #endif
 #include "presentation_pacer.hpp"

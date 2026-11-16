@@ -157,9 +157,9 @@ if(TARGET rt64)
     # The game gets miniz from RT64's existing archive, exactly once. The child
     # worker gets a separate small provider, never the renderer or window stack.
     target_link_libraries(DKRLegacyModCore PRIVATE rt64)
-    if(APPLE)
-        # Metal builds skip the enhanced-water stage, whose RT64 interface
-        # carries src/game (the vehicle protocol headers) elsewhere.
+    if(APPLE OR NOT DKR_ENHANCED_WATER)
+        # Metal builds (and a web page's) skip the enhanced-water stage, whose
+        # RT64 interface carries src/game (the vehicle protocol headers) elsewhere.
         target_include_directories(DKRLegacyModCore PRIVATE "${_dkr_mod_src}/..")
     endif()
 else()
