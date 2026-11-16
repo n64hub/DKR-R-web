@@ -6,7 +6,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <winhttp.h>
-#elif !defined(__ANDROID__) && !defined(__APPLE__)
+#elif !defined(__ANDROID__) && !defined(__APPLE__) && !defined(__EMSCRIPTEN__)
 #include <curl/curl.h>
 #endif
 
@@ -89,7 +89,7 @@ Reply request(const Pending& pending, std::stop_token stop) {
     }
     return stop.stop_requested() ? Reply{} : reply;
 }
-#elif !defined(__ANDROID__) && !defined(__APPLE__)
+#elif !defined(__ANDROID__) && !defined(__APPLE__) && !defined(__EMSCRIPTEN__)
 Reply request(const Pending& pending, std::stop_token stop) {
     Reply reply;
     static const auto initialised = curl_global_init(CURL_GLOBAL_DEFAULT);

@@ -15,11 +15,15 @@
 #    version of its patches to another.
 # 3. N64Recomp, built natively from the patched checkout: the page needs the code the web-patched one writes.
 # 4. The decomp's ELF of US v1.0 (extern/dkr-decomp, IDO through ido-recomp, its own make setup), in build/decomp/v77,
-#    and the recompiled code from it by DKR-R's Patch Pipeline policy (as scripts/Prepare-DKR-Runtime-macOS.sh does),
-#    in build/generated/v77. The page has US v1.0 only: Rev A would be a second copy of the game's code in the wasm.
+#    the recompiled code from it by DKR-R's Patch Pipeline policy (scripts/compose_payloads.py), in build/generated/v77,
+#    and the build inputs DKR-R derives from that (scripts/prepare_payloads.py: the save-layout and in-world portrait
+#    stages, the Camera++ kernel), in build/prepared, as scripts/Prepare-DKR-Runtime-macOS.sh does for both revisions.
+#    The page has US v1.0 only: Rev A would be a second copy of the game's code in the wasm. So it has no local model
+#    detail either, which DKR-R builds only with both revisions, and no owned rollback engine (no online play).
 # 5. The page, with emcmake, in build-web. --prepare stops before it.
 #
-# --patches needs no ROM: steps 1 and 2 without the decomp, then the page configured with no recompiled code in
+# --patches needs no ROM: steps 1 and 2 without the decomp's build (its symbol lists name the guest symbols the runtime
+# reads, runtime-recomp/cmake/GuestSymbols.cmake), then the page configured with no recompiled code in
 # build-web-patches, which stages DKR-R's own configure-time patches (runtime-recomp/cmake/StagedPatch.cmake, every
 # stage a page has) over the patched checkouts. It fails where any layer stops applying. N64Recomp-browser's CI runs it
 # with its own checkout as lib/N64Recomp-browser, so a change there that breaks this stack fails on its PR.
@@ -42,8 +46,7 @@ step() { printf '\n== %s\n' "$*"; }
 
 # --- 1. Dependencies ---
 step "Dependencies"
-deps="n64-modern-runtime rt64 gekkonet monocypher mbedtls"
-[[ $patches_only == 1 ]] || deps="dkr-decomp $deps"
+deps="dkr-decomp n64-modern-runtime rt64 gekkonet monocypher mbedtls"
 python3 - $deps <<'PY' | while IFS=$'\t' read -r name destination commit; do
 import json, sys
 wanted = set(sys.argv[1:])
@@ -131,22 +134,7 @@ step "US v1.0 ELF"
 tree=build/decomp/v77
 elf="$tree/build/dkr.us.v77.elf"
 built_rom="$tree/build/dkr.us.v77.z64"
-mkdir -p $tree/baseroms
-python3 - "$rom" $tree/baseroms/baserom.us.v77.z64 <<'PY'
-import hashlib, pathlib, sys
-source, target = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
-data = bytearray(source.read_bytes())
-magic = bytes(data[:4]).hex()
-if magic == "37804012":
-    data[0::2], data[1::2] = data[1::2], data[0::2]
-elif magic == "40123780":
-    for i in range(0, len(data) - 3, 4):
-        data[i:i + 4] = data[i:i + 4][::-1]
-if hashlib.sha1(data).hexdigest() != "0cb115d8716dbbc2922fda38e533b9fe63bb9670":
-    raise SystemExit(f"{source}: not Diddy Kong Racing US v1.0 (SHA-1 {hashlib.sha1(data).hexdigest()})")
-if not target.exists() or target.read_bytes() != data:
-    target.write_bytes(data)
-PY
+python3 scripts/compose_payloads.py rom --revision 77 "$rom" $tree/baseroms/baserom.us.v77.z64
 decomp_commit="$(git -C extern/dkr-decomp rev-parse HEAD)"
 if [[ "$(cat $tree/.dkr-elf-stamp 2> /dev/null)" != "$decomp_commit" || ! -f "$elf" ]]; then
     rsync -a --delete --exclude /.git --exclude /build --exclude /asm --exclude /assets --exclude /baseroms \
@@ -158,21 +146,16 @@ fi
 
 step "US v1.0 recompiled code"
 work=build/generated/v77
-inputs="$(cat runtime-recomp/*.v77.*.json scripts/*.py "$elf" "$recompiler" | sha1sum | cut -c1-40)"
-if [[ "$(cat $work/.dkr-payload-stamp 2> /dev/null)" != "$inputs" || ! -f $work/RecompiledFuncs/funcs.h ]]; then
-    rm -rf $work && mkdir -p $work/RecompiledFuncs
-    python3 scripts/compose_legacy_mod_policy.py \
-        --policy runtime-recomp/dkr.us.v77.recomp-policy.json \
-        --fragment runtime-recomp/legacy-mods.v77.recomp-fragment.json \
-        --track-menu runtime-recomp/legacy-track-menu.v77.recomp-fragment.json \
-        --characters runtime-recomp/legacy-characters.v77.recomp-fragment.json \
-        --character-menu runtime-recomp/legacy-character-menu.v77.recomp-fragment.json \
-        --scene-runtime --elf "$elf" --output $work/policy.json
-    python3 scripts/generate_recomp_config.py --policy $work/policy.json --elf "$elf" --rom "$built_rom" \
-        --output-functions $work/RecompiledFuncs --entrypoint 0x80065D40 --output $work/dkr.us.v77.toml
-    (cd runtime-recomp && "$recompiler" "$root/$work/dkr.us.v77.toml") > $work/n64recomp.log 2>&1 ||
-        { tail -20 $work/n64recomp.log; exit 1; }
-    echo "$inputs" > $work/.dkr-payload-stamp
+prepared=build/prepared
+inputs="$(cat runtime-recomp/*.v77.*.json scripts/*.py "$elf" "$recompiler" |
+    sha1sum | cut -c1-40)"
+if [[ "$(cat $prepared/.dkr-payload-stamp 2> /dev/null)" != "$inputs" || ! -f $prepared/prepared.json ]]; then
+    rm -rf $work
+    python3 scripts/compose_payloads.py payload --revision 77 --elf "$elf" --rom "$built_rom" \
+        --recompiler "$recompiler" --output $work || { tail -20 $work/n64recomp.log; exit 1; }
+    python3 -B scripts/prepare_payloads.py --output $prepared \
+        --input 77 $work/RecompiledFuncs $work/dkr.us.v77.toml "$elf"
+    echo "$inputs" > $prepared/.dkr-payload-stamp
 fi
 [[ $prepare_only == 1 ]] && exit 0
 
@@ -180,13 +163,13 @@ fi
 step "Page"
 embuilder build sdl2-mt freetype-legacysjlj > /dev/null
 # runtime-recomp/CMakeLists.txt turns off what a page can't have when it configures with Emscripten. Custom Magic Codes
-# stage their dispatch from the config the recompiled code came from (DKR_CODE_POLICY_V77, CustomMagicCodes.cmake), so a
-# build-web configured before they came (its cache without this DKR_CODE_POLICY_V77, or with the default a failed
-# regeneration left) is configured again to get it.
+# stage their dispatch from the config the recompiled code came from (DKR_CODE_POLICY_V77, CustomMagicCodes.cmake), here
+# the prepared one, so a build-web configured before (its cache with another DKR_CODE_POLICY_V77) is configured again.
+# The rest of the prepared inputs are runtime-recomp/cmake/PreparedInputs.cmake's defaults.
 [[ -f build-web/build.ninja ]] &&
-    grep -qxF "DKR_CODE_POLICY_V77:FILEPATH=$root/$work/dkr.us.v77.toml" build-web/CMakeCache.txt ||
+    grep -qxF "DKR_CODE_POLICY_V77:FILEPATH=$root/$prepared/v77.toml" build-web/CMakeCache.txt ||
     emcmake cmake -S runtime-recomp -B build-web -G Ninja -DCMAKE_BUILD_TYPE=Release \
-    -DDKR_RELEASE_VERSION="$(cat VERSION)" -DDKR_RUNTIME_BUILD_GENERATED=ON \
-    -DDKR_GENERATED_SOURCE_V77="$root/$work/RecompiledFuncs" -DDKR_CODE_POLICY_V77="$root/$work/dkr.us.v77.toml" \
+    -DDKR_RELEASE_VERSION="$(cat VERSION)" -DDKR_RUNTIME_BUILD_GENERATED=ON -DDKR_PREPARED_DIR="$root/$prepared" \
+    -DDKR_GENERATED_SOURCE_V77="$root/$prepared/generated-v77" -DDKR_CODE_POLICY_V77="$root/$prepared/v77.toml" \
     -DRT64_NAGA_EXECUTABLE="$(command -v naga)"
 ninja -C build-web DKRPortGame

@@ -36,7 +36,7 @@
 #include <winhttp.h>
 #else
 // Android links no HTTPS backend (the CURL link in CMakeLists.txt).
-#if !defined(__ANDROID__)
+#if !defined(__ANDROID__) && !defined(__EMSCRIPTEN__)
 #include <curl/curl.h>
 #endif
 #include <fcntl.h>
@@ -338,7 +338,8 @@ Response http_once(const Request& r, std::stop_token stop, const Sink& sink) {
     }
     return response;
 }
-#elif defined(__ANDROID__)
+#elif defined(__ANDROID__) || defined(__EMSCRIPTEN__)
+// A page has no libcurl, and its sidebar has no Mod Library (runtime_ui.cpp).
 Response http_once(const Request&, std::stop_token, const Sink&) {
     throw Error("The Mod Store isn't available in this build.");
 }

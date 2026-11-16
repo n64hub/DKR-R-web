@@ -149,6 +149,12 @@ if(IOS)
 endif()
 option(DKR_RUNTIME_BUILD_SDL3_INPUT_HOST "Build the isolated SDL3 native controller and sensor host" ON)
 include("${CMAKE_CURRENT_LIST_DIR}/cmake/PreparedInputs.cmake")
+if(EMSCRIPTEN)
+    # A page has no online play, so none of the owned rollback engines the prepared inputs hold: each is another copy
+    # of the game's code in the wasm.
+    set(DKR_EXPERIMENTAL_OWNED_GENERATED "" CACHE PATH "" FORCE)
+    set(DKR_EXPERIMENTAL_OWNED_GENERATED_V80 "" CACHE PATH "" FORCE)
+endif()
 include("${CMAKE_CURRENT_LIST_DIR}/cmake/BuildInputs.cmake")
 set(DKR_GENERATED_SOURCE_V77
     "${CMAKE_CURRENT_LIST_DIR}/RecompiledFuncs"
@@ -1973,8 +1979,8 @@ if(DKR_RUNTIME_BUILD_GENERATED)
     target_link_libraries(DKRPortGameCore PRIVATE DKRCameraPresentation)
     if(WIN32)
         target_link_libraries(DKRPortGameCore PRIVATE winhttp crypt32 bcrypt)
-    elseif(NOT ANDROID AND NOT IOS)
-        # macOS uses the system libcurl; Android and iOS have no store backend.
+    elseif(NOT ANDROID AND NOT IOS AND NOT EMSCRIPTEN)
+        # macOS uses the system libcurl; Android, iOS and a page have no store backend.
         find_package(CURL REQUIRED)
         target_link_libraries(DKRPortGameCore PRIVATE CURL::libcurl)
     endif()
