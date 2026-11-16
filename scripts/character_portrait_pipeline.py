@@ -19,6 +19,7 @@ from pathlib import Path
 import shutil
 from typing import Any, cast
 
+from recomp_web_form import desktop_form
 from save_layout_pipeline import DEF
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -89,7 +90,8 @@ def guest(source: Path, output: Path, revision: int, config: Path, output_config
                 raise ValueError("Duplicate world portrait function")
             end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
             body = text[m.start() : end]
-            if sha(body.encode()) != GUEST_PINS[revision]:
+            # Pinned in the desktop form of a web build's body (recomp_web_form.py).
+            if sha(desktop_form(body).encode()) != GUEST_PINS[revision]:
                 raise ValueError("Unreviewed CharacterFlag guest instructions")
             replacement = replace(
                 body,
@@ -97,7 +99,7 @@ def guest(source: Path, output: Path, revision: int, config: Path, output_config
                 WORLD_PORTRAIT.read_text() + "\n    MEM_W(0X24, ctx->r3) = ctx->r11;",
             )
             edits[file.name] = text[: m.start()] + replacement + text[end:]
-            found = dict(original_sha256=sha(body.encode()), patched_sha256=sha(replacement.encode()))
+            found = dict(original_sha256=sha(desktop_form(body).encode()), patched_sha256=sha(replacement.encode()))
     if not found:
         raise ValueError("Missing in-world portrait guest function")
     shutil.copytree(source, output)

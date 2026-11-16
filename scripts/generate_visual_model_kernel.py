@@ -19,6 +19,7 @@ import re
 from typing import cast
 
 from kernel_inputs import CALL, DEF, HEADER_HASH, elf_symbols, reviewed_bytes, strip
+from recomp_web_form import desktop_form
 
 PINS = {
     77: {
@@ -71,7 +72,8 @@ def generate(source: Path, header_path: Path, elf: Path, revision: int, output: 
             if match[1] in PINS[revision]:
                 if match[1] in functions:
                     raise ValueError("Duplicate visual kernel function")
-                body = text[match.start() : matches[i + 1].start() if i + 1 < len(matches) else len(text)]
+                # Pinned in the desktop form of a web build's body (recomp_web_form.py).
+                body = desktop_form(text[match.start() : matches[i + 1].start() if i + 1 < len(matches) else len(text)])
                 if hashlib.sha256(body.encode()).hexdigest() != PINS[revision][match[1]]:
                     raise ValueError("Unreviewed visual kernel: " + match[1])
                 functions[match[1]] = body

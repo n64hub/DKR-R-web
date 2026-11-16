@@ -14,6 +14,8 @@ from pathlib import Path
 import re
 import shutil
 
+from recomp_web_form import desktop_form
+
 DEF = re.compile(r"RECOMP_FUNC\s+void\s+(\w+)\s*\([^{};]*\)\s*\{")
 OPERATIONS = {
     "populate_settings_from_save_data": 0,
@@ -86,14 +88,15 @@ def stage(source: Path, output: Path, revision: int, config: Path, output_config
                 continue
             end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
             body = text[m.start() : end]
-            if sha(body) != PINS[revision][name]:
+            # Pinned in the desktop form of a web build's body (recomp_web_form.py).
+            if sha(desktop_form(body)) != PINS[revision][name]:
                 raise ValueError("Unreviewed save function " + name)
             op = OPERATIONS[name]
             entry = f"\n    dkr_save_layout_{op}(rdram, ctx);\n    return;\n"
             opening = body.index("{") + 1
             replacement = body[:opening] + entry + body[opening:]
             changed = changed[: m.start()] + replacement + changed[end:]
-            found[name] = {"original_sha256": sha(body), "patched_sha256": sha(replacement)}
+            found[name] = {"original_sha256": sha(desktop_form(body)), "patched_sha256": sha(replacement)}
             # Complete config makes code-mod hook protection cover the port fix.
             address = re.search(r"//\s*(?:0x)?([0-9A-Fa-f]{8})", body)
             if not address:

@@ -17,6 +17,7 @@ import re
 from typing import cast
 
 from kernel_inputs import CALL, DEF, HEADER_HASH, elf_symbols, reviewed_bytes, strip
+from recomp_web_form import desktop_form
 
 ROOT = Path(__file__).resolve().parents[1]
 # The kernel's native bridge (DKRCameraScene compiles these beside it).
@@ -133,7 +134,9 @@ def generate(source: Path, header: Path, elf: Path, revision: int, output: Path)
         for i, m in enumerate(matches):
             if m[1] in functions:
                 raise ValueError("Duplicate scene routine")
-            functions[m[1]] = text[m.start() : matches[i + 1].start() if i + 1 < len(matches) else len(text)]
+            # The kernel copies the desktop form of each body, which the header it rewrites declares everything for.
+            end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+            functions[m[1]] = desktop_form(text[m.start() : end])
     work = list(ROOTS)
     selected: dict[str, str] = {}
     while work:
@@ -296,7 +299,7 @@ def verify(output: Path) -> None:
                 if m[1] in found:
                     raise ValueError("Duplicate camera draw input")
                 body = text[m.start() : matches[i + 1].start() if i + 1 < len(matches) else len(text)]
-                found[m[1]] = hashlib.sha256(body.encode()).hexdigest()
+                found[m[1]] = hashlib.sha256(desktop_form(body).encode()).hexdigest()
     if found != manifest["functions"] or set(found) != NAMES:
         raise ValueError("Camera draw source provenance changed")
     print("Private camera draw composition verified:", manifest["revision"])
