@@ -21,7 +21,8 @@
 #    The page has US v1.0 only: Rev A would be a second copy of the game's code in the wasm. So it has no local model
 #    detail either, which DKR-R builds only with both revisions, and no owned rollback engine (no online play). DKR-R's
 #    generators read recomp.h as DKR-R patches it, by its hash, so step 2 keeps that aside, in build/dkr-recomp, before
-#    the web's patch to it.
+#    the web's patch to it. They pin the recompiled functions they read by the hash of a desktop build's body, so they
+#    read the web N64Recomp's in that form (scripts/recomp_web_form.py).
 # 5. The page, with emcmake, in build-web. --prepare stops before it.
 #
 # --patches needs no ROM: steps 1 and 2 without the decomp's build (its symbol lists name the guest symbols the runtime

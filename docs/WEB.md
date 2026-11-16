@@ -22,14 +22,17 @@ unchanged.
   Modern's Match display is RT64's Display on a page (`rt64_renderer.cpp`), since SDL's Emscripten port reports no
   refresh rate, so RT64 interpolates the game's 30 frames a second to the display's rate. Original water, no
   generated mipmaps.
-- **Online play, mods and custom tracks.** Online play needs WebRTC's transport (`DKR_NETPLAY_WEBRTC` off), and mods
-  are imported by a worker process, which a page can't start (`legacy_mod_process.cpp`). N64ModernRuntime's live
+- **Online play, mods and custom tracks.** Online play needs WebRTC's transport (`DKR_NETPLAY_WEBRTC` off: the
+  online directory's socket is one that never opens, `online_directory.hpp`), and mods are imported by a worker
+  process, which a page can't start (`legacy_mod_process.cpp`). The Mod Store's cover images are drawn with Vulkan's
+  and D3D12's own descriptors, so a page has none (`mod_store/overlay_images_web.cpp`). N64ModernRuntime's live
   recompiler (sljit) emits machine code, so the runtime's mods are off on every page too.
 - **DKR-R's updater.** A page is updated by the site that serves it, so it configures no update service
   (`runtime_ui.cpp`), and its `https_get` only refuses (`update_http.cpp`): no curl, no helper process, no install lock.
 - **Enhanced water**, whose shaders are Vulkan's (`DKR_ENHANCED_WATER` off), the SDL3 input host (a process of its
   own: the page reads keys and gamepads through Emscripten's SDL2), the tests, and Rev A: the page holds US v1.0's code
-  alone, since Rev A's would be a second copy of the game in the wasm.
+  alone, since Rev A's would be a second copy of the game in the wasm. So it has no local model detail either, which
+  DKR-R builds only with both revisions, and no owned rollback engine, which is online play's.
 
 ## How it is built
 
