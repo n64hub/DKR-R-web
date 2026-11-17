@@ -3138,3 +3138,18 @@ index ac6431c..fb7b55b 100644
  #ifdef HLSL_CPU
  };
  #endif
+diff --git a/src/hle/rt64_workload_queue.h b/src/hle/rt64_workload_queue.h
+--- a/src/hle/rt64_workload_queue.h
++++ b/src/hle/rt64_workload_queue.h
+@@ -36,7 +36,10 @@
+ // every interpolated frame to be presented: its frames take longer, its rate falls and the interpolated frames grow,
+ // down to a rate of one or two a second and a color target for each of hundreds of display frames. Each workload keeps
+ // the buffers its biggest draws took, so a game of one workload a frame holds that many frames' vertices.
+-#   define WORKLOAD_QUEUE_SIZE 64
++// DKR-R-web: 16, not the web forks' 64. The game draws a frame in one workload, now and then two, and 1.0.15's
++// passes make each frame's buffers big enough that 64 of them filled the page's 1536 MB heap in a minute of a race,
++// the in-game overlay's fonts then taking it past (docs/WEB.md, The heap).
++#   define WORKLOAD_QUEUE_SIZE 16
+ #else
+ #   define WORKLOAD_QUEUE_SIZE 4
+ #endif

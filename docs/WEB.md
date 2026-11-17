@@ -73,8 +73,13 @@ B, Z, Enter Start, Q and E the shoulders, IJKL the C buttons).
 - **Render to RAM is off** (`rt64_renderer.cpp`): in Chrome RT64's readback of every frame holds each display list
   for the GPU process. The game's CPU reads a frame only to hold the last one on screen while a level unloads, which
   doesn't need it (`rt64_renderer.cpp` says why).
-- **The heap is the frontend's fixed 1536 MB**, without memory growth, which with threads slows the page's JavaScript:
-  with growth on, it never grew past that through the shader list's recording and 27 maps in one visit.
+- **The heap is the frontend's fixed 1536 MB**, without memory growth, which with threads slows the page's JavaScript.
+  RT64's queue of workloads is 16 on the page, not the web forks' 64 (the last hunk of `patches/web/rt64.patch`):
+  each workload keeps the buffers its biggest frame took, and 1.0.15's frames are big enough that 64 of them took the
+  heap from about 670 MB to the whole 1536 in the first minute of a race, and the in-game overlay, which the first
+  balloon won attaches (its fonts' atlases), then ran it out (`Aborted(OOM)`). With 16 the same race and win held
+  it at about 730 MB, then 1325 with the overlay (N64Recomp-browser's `tools/heap_probe.js`, Chrome uncapped at
+  1256x645). The game draws a frame in one workload, now and then two (`?frame-log`), so 16 never splits a race's.
 
 ## Prebuilt shaders
 
