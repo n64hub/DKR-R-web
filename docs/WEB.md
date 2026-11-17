@@ -74,7 +74,8 @@ B, Z, Enter Start, Q and E the shoulders, IJKL the C buttons).
   for the GPU process. The game's CPU reads a frame only to hold the last one on screen while a level unloads, which
   doesn't need it (`rt64_renderer.cpp` says why).
 - **The heap is the frontend's fixed 1536 MB**, without memory growth, which with threads slows the page's JavaScript.
-  RT64's queue of workloads is 16 on the page, not the web forks' 64 (the last hunk of `patches/web/rt64.patch`):
+  RT64's queue of workloads is 16 on the page, not the web forks' 64 (`WORKLOAD_QUEUE_SIZE` on the rt64 target,
+  `runtime-recomp/CMakeLists.txt`):
   each workload keeps the buffers its biggest frame took, and 1.0.15's frames are big enough that 64 of them took the
   heap from about 670 MB to the whole 1536 in the first minute of a race, and the in-game overlay, which the first
   balloon won attaches (its fonts' atlases), then ran it out (`Aborted(OOM)`). With 16 the same race and win held

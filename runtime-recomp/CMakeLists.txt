@@ -527,6 +527,10 @@ if(DKR_RUNTIME_BUILD_RT64)
     endif()
     add_compile_definitions(HLSL_CPU)
     add_subdirectory("${DKR_RT64_SOURCE}" "${CMAKE_BINARY_DIR}/rt64")
+    if(EMSCRIPTEN)
+        # RT64's queue of workloads on the page: 16, not the web forks' 64 (docs/WEB.md, The heap).
+        target_compile_definitions(rt64 PUBLIC WORKLOAD_QUEUE_SIZE=16)
+    endif()
     # Layer selection is a checked build-stage patch; never edit RT64 itself.
     dkr_stage_patch(
         rt64
