@@ -108,9 +108,3 @@ player's kart instead: DKR-R's display list check then rejects every frame. A re
 survey's teleport. `web/play_plan_extended.json`, at most 5 minutes, goes on to races in Snowflake Mountain and Sherbet
 Island, for when a longer play is needed, and the shaders it misses go into the list. Each plan's header
 says what it plays.
-
-## Played
-
-How the page plays in Chrome and Firefox, run by run, is recorded in N64Recomp-browser's
-[plays.jsonl](https://github.com/n64hub/N64Recomp-browser/blob/main/plays.jsonl) and its
-[games table](https://github.com/n64hub/N64Recomp-browser#games).

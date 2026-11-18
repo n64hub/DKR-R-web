@@ -13,7 +13,7 @@
 **Play it in the browser: https://n64hub.com/diddy-kong-racing/**, with your own dump of Diddy Kong Racing (USA,
 v1.0), picked on the page and kept in the browser. It needs WebGPU (Chrome or Edge 113 and up, or Firefox). The page is
 the game alone, without DKR-R's launcher, online play, mods or custom tracks (docs/WEB.md says why). It is built from
-this branch and published with N64Recomp-browser's `tools/publish_page.sh`, so it can be a commit or two behind.
+this branch, so it can be a commit or two behind.
 
 <img width="1672" height="941" alt="Diddy Kong Racing Recompiled" src="https://github.com/user-attachments/assets/c913bee2-029c-4e29-9921-0f6abe7a3bf1" />
 
