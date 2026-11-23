@@ -1,4 +1,5 @@
 #include "netplay/peer_relay/transport.hpp"
+#include "session_log.hpp"
 #include <algorithm>
 #include <cassert>
 #include <cstdio>
@@ -230,6 +231,10 @@ void policy_tests() {
         }
         check(sim.delivered.empty() && !sim.selected(2),
               "a full receiving queue cannot issue successful delivery receipts");
+        const auto receiver = sim.nodes[1]->view(sim.now);
+        check(receiver.lane_dropped[2][std::size_t(Drop::DeliverFull)] > 0 &&
+                  receiver.lane_dropped[2][std::size_t(Drop::DeliverFull)] == receiver.dropped,
+              "a full receiving queue is counted on its lane as deliver-full");
     }
     {
         Simulation sim;
@@ -295,6 +300,15 @@ void policy_tests() {
         }
         check(sim.nodes[3]->view(sim.now).queued < 128 * 1024, "priority fixture below byte bound");
         check(rejected > 0, "a blocked route cannot consume every peer's queue space");
+        {
+            const auto proxy = sim.nodes[3]->view(sim.now);
+            std::uint64_t total = 0;
+            for (const auto& lane : proxy.lane_dropped)
+                for (const auto count : lane)
+                    total += count;
+            check(proxy.lane_dropped[1][std::size_t(Drop::ForwardFailed)] > 0 && total == proxy.dropped,
+                  "refused forwards are counted on their lane as forward-failed and add up");
+        }
         const auto dropped = sim.nodes[3]->view(sim.now).dropped;
         sim.block_forward = false;
         sim.repair_block = true;
@@ -599,6 +613,23 @@ void policy_tests() {
         check(received == MaxLobbyMembers - 1, "every client and spectator receives maximum lobby status");
     }
     {
+        // The session leaving its active states withdraws the relay context; the
+        // teardown line still needs what this device relayed.
+        Simulation sim;
+        sim.run(13s);
+        const auto cipher = secure::seal(Bytes{8, 7, 6, 5}, sim.original, 2, 778, 77);
+        for (unsigned lane = 0; lane < 5; ++lane)
+            check(sim.nodes[2]->send(1, cipher, lane, sim.now), "lanes accepted before the context is withdrawn");
+        sim.run(200ms);
+        const auto before = sim.nodes[3]->view(sim.now);
+        check(before.forwarded > 0, "proxy forwarded before the context is withdrawn");
+        sim.nodes[3]->configure(Context{}, sim.now);
+        const auto after = sim.nodes[3]->view(sim.now);
+        check(after.participated && after.forwarded == before.forwarded &&
+                  after.lane_forwarded == before.lane_forwarded,
+              "relay counters and participation survive the context being withdrawn");
+    }
+    {
         Simulation sim;
         sim.drop_control = true;
         sim.run(13s);
@@ -611,6 +642,16 @@ void policy_tests() {
             check(sim.nodes[2]->send(1, cipher, lane, sim.now), "five traffic lanes accepted");
         sim.run(200ms);
         check(sim.delivered.size() == 5, "five lanes forwarded");
+        {
+            const auto proxy = sim.nodes[3]->view(sim.now);
+            std::uint64_t total = 0;
+            bool every_lane = true;
+            for (const auto bytes : proxy.lane_forwarded) {
+                total += bytes;
+                every_lane = every_lane && bytes > 0;
+            }
+            check(every_lane && total == proxy.forwarded, "forwarded bytes are counted per lane and add up");
+        }
         for (const auto& [origin, b] : sim.delivered) {
             Id from = 0, seq = 0;
             Bytes opened;
@@ -843,6 +884,7 @@ class DelayedUdp final : public n::SessionTransport {
             base_ = n::make_udp_session_transport();
     }
     n::PeerAddress delayed;
+    unsigned direct_checkpoints = 0; // checkpoint-lane sends that went straight to `delayed`
     bool open(std::uint16_t p, std::string& e) override {
         return base_->open(p, e);
     }
@@ -859,6 +901,8 @@ class DelayedUdp final : public n::SessionTransport {
     n::DatagramSendStatus send_status(const n::PeerAddress& a, std::span<const std::uint8_t> b,
                                       n::TransportTrafficClass c, std::string& e) override {
         if (a == delayed) {
+            if (c == n::TransportTrafficClass::Checkpoint)
+                ++direct_checkpoints;
             if (queue_.size() >= 1024)
                 return n::DatagramSendStatus::WouldBlock;
             queue_.push_back({a, Bytes(b.begin(), b.end()), c, Clock::now() + 70ms});
@@ -1004,7 +1048,7 @@ void socket_tests(bool rtc) {
             check(cipher.size() == MaxInner, "full-size original datagram fixture");
             check(sockets[2]->send_status(addresses[1], cipher, n::TransportTrafficClass::Checkpoint, error) ==
                       n::DatagramSendStatus::Sent,
-                  "full-size checkpoint uses relay without shrinking native datagrams");
+                  "full-size checkpoint goes direct without shrinking native datagrams");
         }
         if (received == expected)
             break;
@@ -1016,6 +1060,10 @@ void socket_tests(bool rtc) {
     check(selected && received == expected, rtc ? "real WebRTC extra leg and all five lanes relay original packets"
                                                 : "real UDP proxy and all five lanes relay original packets");
     check(view(&keys[3]).forwarded > 0, "proxy forwarding recorded");
+    // Both ends sent a checkpoint-lane packet while the proxy route was selected:
+    // each must have taken the direct (delayed) path, not the relay.
+    check(delayed[1]->direct_checkpoints >= 1 && delayed[2]->direct_checkpoints >= 1,
+          "checkpoint lane stays on the direct route while a proxy route is selected");
     Context withdraw;
     withdraw.room = 901;
     withdraw.host = 1;
@@ -1068,7 +1116,41 @@ void socket_tests(bool rtc) {
                 (long long)std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - start).count());
 }
 } // namespace
+// close() runs more than once per transport in the real session (explicit disconnect, then the
+// destructor). The teardown report must be written once, and the second close must not change it.
+void teardown_line_once_test() {
+    int key = 0;
+    std::string error;
+    auto transport = wrap(&key, std::make_unique<DelayedUdp>(false), NetworkOptions{{}});
+    check(transport->open(0, error), "teardown test socket open");
+    n::PeerAddress self;
+    check(n::DatagramSocket::resolve("127.0.0.1", transport->local_port(), self, error), "teardown test address");
+    Context c;
+    c.room = 902;
+    c.host = 1;
+    c.local = 2;
+    c.active = true;
+    c.allow = true;
+    c.members = {{1, "Host", n::DatagramSocket::describe(self), true},
+                 {2, "Client", n::DatagramSocket::describe(self), true}};
+    configure(&key, c, {});
+    dkr::runtime::session_log::Queue queue;
+    {
+        dkr::runtime::session_log::Scope scope(&queue);
+        transport->close();
+        transport->close();
+        transport->close();
+    }
+    unsigned lines = 0;
+    for (const auto& line : queue.lines)
+        if (line.find("[online][proxy] teardown ") != std::string::npos)
+            ++lines;
+    check(lines == 1, "teardown line written exactly once across repeated close()");
+    check(!transport->is_open(), "transport closed after repeated close()");
+}
+
 int main(int argc, char** argv) {
+    teardown_line_once_test();
     if (argc == 1 || std::string(argv[1]) == "--policy")
         policy_tests();
     if (argc == 1 || std::string(argv[1]) == "--udp")
