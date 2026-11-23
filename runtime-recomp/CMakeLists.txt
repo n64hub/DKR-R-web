@@ -255,6 +255,13 @@ if(TARGET miniz AND CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_C_COMPILER_ID M
     # declares neither ftello64 nor ftello and miniz_zip.c does not compile.
     target_compile_definitions(miniz PRIVATE _GNU_SOURCE)
 endif()
+if(TARGET recomp_lzma_sdk)
+    # The LZMA SDK's decoders, which N64ModernRuntime builds for Load ROM's
+    # archives (on with Emscripten), call posix_memalign. With
+    # CMAKE_C_EXTENSIONS off the compile is strict ISO C, where Emscripten's
+    # musl declares no POSIX function, so they take the GNU dialect here.
+    set_property(TARGET recomp_lzma_sdk PROPERTY C_EXTENSIONS ON)
+endif()
 
 if(NOT EXISTS "${DKR_GEKKONET_SOURCE}/GekkoLib/CMakeLists.txt")
     message(FATAL_ERROR "GekkoNet has not been prepared at ${DKR_GEKKONET_SOURCE}. " "Run Build-DKR-Runtime.cmd first.")
